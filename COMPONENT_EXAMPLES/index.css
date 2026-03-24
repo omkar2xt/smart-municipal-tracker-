@@ -23,6 +23,14 @@
     @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white;
   }
 
+  .input-base:disabled {
+    @apply bg-gray-100 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400;
+  }
+
+  .input-error {
+    @apply border-red-500 focus:ring-red-500;
+  }
+
   .card-base {
     @apply bg-white rounded-lg shadow-md dark:bg-gray-800 p-6;
   }

@@ -33,7 +33,7 @@ export default function LoginPage({ onLogin }) {
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      console.log('Login successful', { email, rememberMe });
+      console.log('Login successful', { rememberMe });
       // Call onLogin callback if provided
       if (onLogin) {
         onLogin(email);

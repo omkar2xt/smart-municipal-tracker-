@@ -32,8 +32,12 @@ export const getBatteryStatus = async () => {
   } catch (error) {
     console.error("Failed to get battery status:", error);
     return {
-      level: 100,
+      level: null,
       state: "unknown",
+      isCharging: false,
+      isLow: false,
+      isCritical: false,
+      timestamp: new Date().toISOString(),
       error: error.message,
     };
   }
@@ -104,15 +108,23 @@ export const getOptimizedLocationAccuracy = async () => {
  */
 export const watchBatteryLevel = (onBatteryChange) => {
   try {
-    // Battery API doesn't support listeners, use polling
-    const interval = setInterval(async () => {
-      const status = await getBatteryStatus();
+    const listener = Battery.addBatteryLevelListener((status) => {
       if (onBatteryChange) {
-        onBatteryChange(status);
+        onBatteryChange({
+          level: Math.round(status.batteryLevel * 100),
+          state: status.batteryState,
+          isCharging: status.batteryState === Battery.BatteryState.CHARGING,
+          isLow: status.batteryLevel * 100 < BATTERY_THRESHOLDS.LOW,
+          isCritical: status.batteryLevel * 100 < BATTERY_THRESHOLDS.CRITICAL,
+          timestamp: new Date().toISOString(),
+          raw: status,
+        });
       }
-    }, 30000); // Check every 30 seconds
+    });
 
-    return () => clearInterval(interval);
+    return () => {
+      listener.remove();
+    };
   } catch (error) {
     console.error("Failed to watch battery level:", error);
     return () => {};
@@ -236,6 +248,18 @@ export const canSustainTracking = async () => {
   try {
     const battery = await getBatteryStatus();
     const estimate = await estimatePowerConsumption(3600); // Assume 1 hour tracking
+
+    // Use estimate in decision making
+    const reserveTarget = 15;
+    if (typeof estimate.estimatedDrainPercent === 'string' && Number(estimate.estimatedDrainPercent) > reserveTarget) {
+      return {
+        canTrack: false,
+        degraded: true,
+        reason: "Projected high battery drain",
+        recommendation: "Reduce tracking frequency", 
+        estimate,
+      };
+    }
 
     if (battery.isCritical) {
       return {

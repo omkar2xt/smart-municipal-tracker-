@@ -16,11 +16,17 @@ export default function TaskScreen() {
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState("");
+  const isFetchingRef = React.useRef(false);
+  const isMountedRef = React.useRef(true);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (signal) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     try {
       setError("");
-      const data = await apiRequest("get", "/tasks");
+      const data = await apiRequest("get", "/tasks", null, { signal });
+      if (!isMountedRef.current) return;
       const normalizedTasks = Array.isArray(data)
         ? data
         : Array.isArray(data?.records)
@@ -28,15 +34,28 @@ export default function TaskScreen() {
           : [];
       setTasks(normalizedTasks);
     } catch (err) {
+      if (err.name === "AbortError") return;
+      if (!isMountedRef.current) return;
       setError(err?.response?.data?.detail || "Failed to load tasks");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+      isFetchingRef.current = false;
     }
   };
 
   React.useEffect(() => {
-    fetchTasks();
+    const controller = new AbortController();
+    isMountedRef.current = true;
+
+    fetchTasks(controller.signal);
+
+    return () => {
+      isMountedRef.current = false;
+      controller.abort();
+    };
   }, []);
 
   if (loading) {

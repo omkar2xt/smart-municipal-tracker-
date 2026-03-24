@@ -16,6 +16,7 @@ import * as spoofDetectionService from "../services/spoofDetectionService";
 import * as storageService from "../services/storageService";
 import * as wifiService from "../services/wifiService";
 import * as batteryOptimizationService from "../services/batteryOptimizationService";
+import * as syncService from "../services/syncService";
 import { Accelerometer } from "expo-sensors";
 
 // Set accelerometer update interval (ms)
@@ -31,19 +32,63 @@ export default function AttendanceScreen() {
   const previousLocationRef = React.useRef(null);
 
   React.useEffect(() => {
+    let mounted = true;
+    let syncingInProgress = false;
+
+    const processQueueOnReconnect = async () => {
+      if (syncingInProgress) return;
+      syncingInProgress = true;
+      try {
+        const [attendanceQueue, locationQueue] = await Promise.all([
+          storageService.getAttendanceQueue(),
+          storageService.getLocationQueue(),
+        ]);
+
+        if (attendanceQueue.length > 0 || locationQueue.length > 0) {
+          await syncService.syncAllOfflineData();
+        }
+      } catch (err) {
+        console.error("Failed processing offline queue:", err);
+      } finally {
+        syncingInProgress = false;
+      }
+    };
+
     // Monitor battery level
     const unsubscribe = batteryOptimizationService.watchBatteryLevel((status) => {
+      if (!mounted) return;
       setBatteryLevel(status.level);
     });
 
     // Monitor network status
-    const networkUnsubscribe = wifiService.watchNetworkConnectivity((state) => {
-      setIsOffline(!state.isConnected);
+    const networkUnsubscribe = wifiService.watchNetworkConnectivity(async (state) => {
+      if (!mounted) return;
+      const offline = !state.isConnected;
+      setIsOffline(offline);
+      if (!offline) {
+        await processQueueOnReconnect();
+      }
     });
 
+    // Initial network check
+    (async () => {
+      try {
+        const online = await wifiService.isNetworkConnected();
+        if (mounted) {
+          setIsOffline(!online);
+          if (online) {
+            await processQueueOnReconnect();
+          }
+        }
+      } catch (err) {
+        console.error("Failed initial network check:", err);
+      }
+    })();
+
     return () => {
-      unsubscribe();
-      networkUnsubscribe();
+      mounted = false;
+      unsubscribe?.();
+      networkUnsubscribe?.();
     };
   }, []);
 
@@ -84,7 +129,7 @@ export default function AttendanceScreen() {
           clearTimeout(timeoutId);
           subscription.remove();
           const magnitude = Math.sqrt(data.x ** 2 + data.y ** 2 + data.z ** 2);
-          resolve({ accelerometer_x: data.x, accelerometer_y: data.y, accelerometer_z: data.z, magnitude });
+          resolve({ accelerometer_x: data.x, accelerometer_y: data.y, accelerometer_z: data.z, magnitude, sensorTimedOut: false });
         });
       });
       addDetail(`✓ Accelerometer: ${accelData.magnitude.toFixed(2)} m/s²`);
@@ -148,13 +193,17 @@ export default function AttendanceScreen() {
         accelerometer_x: accelData.accelerometer_x,
         accelerometer_y: accelData.accelerometer_y,
         accelerometer_z: accelData.accelerometer_z,
+        sensorTimedOut: !!accelData.sensorTimedOut,
         geofence_valid: isInGeofence,
         spoof_risk_level: spoofRisk.riskLevel,
         network_type: wifiInfo.type,
       };
 
-      // Check if online or queue for offline
-      if (isOffline) {
+      // Re-check current connection just before submit
+      const currentlyOnline = await wifiService.isNetworkConnected();
+      setIsOffline(!currentlyOnline);
+
+      if (!currentlyOnline) {
         await storageService.queueAttendance(attendanceData);
         setResultType("warning");
         setResult("Attendance queued (offline mode)");

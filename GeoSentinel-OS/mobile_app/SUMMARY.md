@@ -209,7 +209,7 @@ POST /sync/bulk with all queued records
 Server processes:
   ├─ Check duplicates (UNIQUE constraint)
   ├─ Run anomaly detection
-  ├─ Store valided records
+  ├─ Store validated records
   └─ Return counts
    ↓
 Client processes response:
@@ -272,7 +272,7 @@ A: Currently hardcoded in `geofenceService.js`. For dynamic geofences, fetch fro
 A: Data remains queued. Manual sync button allows retry. Auto-sync tries again every 5 seconds.
 
 **Q: Is GPS accurate indoors?**
-A: No, GPS accuracy is <5m only outdoors. Indoors may show 30-50m error. Plan geofences accordingly.
+A: Consumer GPS typically achieves ~5–10m accuracy under ideal outdoor conditions; sub‑5m is uncommon on standard mobile devices. Indoors may show 30-50m error. Plan geofences accordingly.
 
 **Q: How much data does location tracking use?**
 A: ~10 KB/hour for 10-second updates (1 record ~200 bytes). Bulk sync compresses all queued records in one request.
@@ -327,6 +327,6 @@ For issues or questions:
 ---
 
 **Version**: 0.2.0  
-**Last Updated**: March 24, 2024  
+**Last Updated**: March 25, 2026  
 **Status**: Production-Ready  
 **Dependencies**: Node.js 14+, npm 6+, Expo client (optional)

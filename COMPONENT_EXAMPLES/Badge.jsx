@@ -19,7 +19,7 @@ export default function Badge({
   };
   
   const variantClass = variants[variant] || variants.gray;
-  const sizeClass = sizes[size] || '';
+  const sizeClass = sizes[size] || sizes.md;
 
   return (
     <span

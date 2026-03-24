@@ -3,32 +3,36 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { login } from "../services/authService";
 
-const ROLE_OPTIONS = ["state_admin", "district_admin", "taluka_admin", "worker"];
-
 export default function LoginScreen({ onAuthenticated }) {
   const [name, setName] = React.useState("");
   const [password, setPassword] = React.useState("");
-  const [roleIndex, setRoleIndex] = React.useState(3);
   const [district, setDistrict] = React.useState("");
   const [taluka, setTaluka] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
   const handleLogin = async () => {
+    const trimmedName = name.trim();
+    const trimmedPassword = (password || "").trim();
+
+    if (!trimmedName || !trimmedPassword) {
+      setError("Please enter email and password");
+      setLoading(false);
+      return;
+    }
+
     try {
       setError("");
       setLoading(true);
-      const role = ROLE_OPTIONS[roleIndex];
       const auth = await login({
-        name: name.trim(),
-        password,
-        role,
+        name: trimmedName,
+        password: trimmedPassword,
         district: district.trim(),
         taluka: taluka.trim(),
       });
       onAuthenticated(auth);
     } catch (err) {
-      setError(err?.response?.data?.detail || "Login failed");
+      setError(err?.response?.data?.detail || err?.message || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -67,23 +71,6 @@ export default function LoginScreen({ onAuthenticated }) {
         onChangeText={setTaluka}
       />
 
-      <View style={styles.roleContainer}>
-        <Text style={styles.roleLabel}>Role: {ROLE_OPTIONS[roleIndex]}</Text>
-        <View style={styles.roleButtonsRow}>
-          <Pressable
-            style={styles.roleButton}
-            onPress={() => setRoleIndex((prev) => (prev + ROLE_OPTIONS.length - 1) % ROLE_OPTIONS.length)}
-          >
-            <Text style={styles.roleButtonText}>Prev</Text>
-          </Pressable>
-          <Pressable
-            style={styles.roleButton}
-            onPress={() => setRoleIndex((prev) => (prev + 1) % ROLE_OPTIONS.length)}
-          >
-            <Text style={styles.roleButtonText}>Next</Text>
-          </Pressable>
-        </View>
-      </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 

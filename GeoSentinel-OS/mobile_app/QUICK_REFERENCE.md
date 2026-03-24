@@ -32,6 +32,7 @@ import { getCurrentLocation } from '../services/gpsService';
 | `getGeofence(name)` | Get geofence by ID | `object \| null` |
 | `createGeofence(name, coords)` | Create custom geofence | `{ name, coordinates }` |
 | `validateAgainstGeofences(lat, lon, list)` | Check multiple geofences | `{isValid, validGeofences[], nearbyGeofences[]}` |
+| `getGeofenceCoverage(lat, lon)` | Get coverage info for location | `{currentLocation, coverage}` |
 
 **Example**:
 ```javascript
@@ -98,6 +99,7 @@ await backgroundLocationService.startBackgroundTracking({
 | `queueLocation(data)` | Queue location record | `Promise<number>` |
 | `getAttendanceQueue()` | Get all queued attendance | `Promise<object[]>` |
 | `getLocationQueue()` | Get all queued locations | `Promise<object[]>` |
+| `getUploadQueue()` | Get all queued uploads | `Promise<object[]>` |
 | `getQueueStatus()` | Get queue counts | `{attendance, locations, uploads, totalPending}` |
 | `clearAttendanceQueue()` | Clear attendance queue | `Promise<void>` |
 | `clearLocationQueue()` | Clear location queue | `Promise<void>` |
@@ -249,7 +251,7 @@ const markAttendance = async () => {
   const data = await getAccelerometerData();
 
   // 3. Validate geofence
-  const geo = geofence Service.getGeofence('pune_taluka');
+  const geo = geofenceService.getGeofence('pune_taluka');
   const inGeo = geofenceService.isWithinGeofence(
     location.latitude, location.longitude, geo
   );

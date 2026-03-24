@@ -59,6 +59,12 @@ export const defineBackgroundLocationTask = (onLocationUpdate) => {
  * Requires location permission
  */
 export const startBackgroundTracking = async (options = {}) => {
+  if (!isTaskDefined) {
+    throw new Error(
+      `Background location task ${BACKGROUND_LOCATION_TASK} not defined/registered — call defineBackgroundLocationTask first.`
+    );
+  }
+
   try {
     // Request background location permission
     const foregroundPermission = await Location.requestForegroundPermissionsAsync();
@@ -84,6 +90,16 @@ export const startBackgroundTracking = async (options = {}) => {
       pausesUpdatesAutomatically: true,
       mayShowUserSettingsDialog: true,
     };
+
+    if (!isTaskDefined) {
+      throw new Error("Background location task BACKGROUND_LOCATION_TASK not defined/registered — call defineBackgroundLocationTask() first");
+    }
+
+    const hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+    if (hasStarted) {
+      console.log("Background location task already running");
+      return true;
+    }
 
     // Start background tracking
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, locationOptions);
@@ -280,5 +296,6 @@ export const calculateHeading = (lat1, lon1, lat2, lon2) => {
     Math.cos(startLat) * Math.sin(endLat) -
     Math.sin(startLat) * Math.cos(endLat) * Math.cos(dLon);
 
-  return (Math.atan2(y, x) * 180) / Math.PI;
+  const headingDegrees = (Math.atan2(y, x) * 180) / Math.PI;
+  return normalizeHeading(headingDegrees);
 };

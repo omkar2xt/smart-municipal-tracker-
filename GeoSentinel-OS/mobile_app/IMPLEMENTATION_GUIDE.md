@@ -20,6 +20,7 @@ This installs all required packages including:
 - `@react-native-async-storage/async-storage` - Local storage
 - `react-native-netinfo` - Network monitoring
 - `axios` - HTTP client
+- `lodash` - Utility functions (debounce, etc.)
 - Navigation and UI libraries
 
 ### 2. Configure Backend URL
@@ -31,7 +32,7 @@ const BASE_URL = "http://192.168.x.x:8000";  // Your backend IP
 
 Or use environment variable:
 ```bash
-export VITE_API_BASE_URL=http://192.168.x.x:8000
+export EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:8000
 ```
 
 ### 3. Start Development Server
@@ -56,6 +57,7 @@ npm run ios
 ```javascript
 // In any screen, use:
 import * as backgroundLocationService from '../services/backgroundLocationService';
+import * as Location from 'expo-location';
 
 // Start background tracking
 const startTracking = async () => {
@@ -84,7 +86,7 @@ const startTracking = async () => {
 import * as spoofDetectionService from '../services/spoofDetectionService';
 import { Accelerometer } from 'expo-sensors';
 
-const checkForSpoofing = async (currentLocation, previousLocation) => {
+const checkForSpoofing = async (currentLocation, previousLocation, locationHistory) => {
   // Read accelerometer data
   const accelData = await new Promise((resolve) => {
     const subscription = Accelerometer.addListener((data) => {
@@ -289,8 +291,9 @@ import { getCurrentLocation } from '../services/gpsService';
 import * as geofenceService from '../services/geofenceService';
 import * as spoofDetectionService from '../services/spoofDetectionService';
 import * as storageService from '../services/storageService';
-import  * as batteryOptimizationService from '../services/batteryOptimizationService';
+import * as batteryOptimizationService from '../services/batteryOptimizationService';
 import { Accelerometer } from 'expo-sensors';
+import NetInfo from '@react-native-community/netinfo';
 import { apiRequest } from '../services/apiService';
 
 Accelerometer.setUpdateInterval(500);
@@ -301,6 +304,13 @@ export default function AttendanceScreen() {
   const [details, setDetails] = React.useState([]);
   const [isOffline, setIsOffline] = React.useState(false);
   const previousLocationRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsOffline(!state.isConnected);
+    });
+    return unsubscribe;
+  }, []);
 
   const markAttendance = async () => {
     try {
@@ -445,7 +455,7 @@ export default function AttendanceScreen() {
 2. Disable battery optimization for the app
 3. Test with app in foreground first
 
-### Issue: asyncStorage Returns Undefined
+### Issue: AsyncStorage Returns Undefined
 **Solution:**
 ```javascript
 const data = await AsyncStorage.getItem('key');
@@ -499,8 +509,8 @@ npm run ios -- --build
 
 Create `.env.production`:
 ```
-VITE_API_BASE_URL=https://api.geosentinel.com
-VITE_JWT_SECRET=your-production-secret
+EXPO_PUBLIC_API_BASE_URL=https://api.geosentinel.com
+EXPO_PUBLIC_JWT_SECRET=your-production-secret
 ```
 
 ### App Store Release

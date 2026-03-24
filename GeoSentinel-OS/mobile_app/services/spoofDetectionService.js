@@ -31,7 +31,9 @@ const detectGPSJump = (
   currLon,
   timeDeltaSeconds
 ) => {
-  if (!prevLat || !prevLon) return { detected: false, reason: null };
+  if (prevLat == null || prevLon == null || !Number.isFinite(prevLat) || !Number.isFinite(prevLon)) {
+    return { detected: false, reason: null };
+  }
 
   const distance = calculateDistance(prevLat, prevLon, currLat, currLon);
   const speedMps = distance / timeDeltaSeconds;
@@ -82,7 +84,9 @@ const detectSensorMismatch = (
  * Flags if accelerometer shows movement but GPS is static
  */
 const detectStationaryMismatch = (gpsDistance, currAccel) => {
-  const movementThreshold = 9.8; // 1g
+  const expectedGravity = 9.8;
+  const motionThreshold = 2.0; // linear acceleration threshold beyond gravity
+  const movementThreshold = expectedGravity + motionThreshold;
   const staticGPS = gpsDistance < 10; // meters
 
   if (staticGPS && currAccel > movementThreshold) {
@@ -154,12 +158,18 @@ export const analyzeSpoofRisk = (
   }
 
   const { latitude: currLat, longitude: currLon } = currentLocation;
-  const { accelerometer_x, accelerometer_y, accelerometer_z } = sensorData;
+  const accelX = Number(sensorData.accelerometer_x) || 0;
+  const accelY = Number(sensorData.accelerometer_y) || 0;
+  const accelZ = Number(sensorData.accelerometer_z) || 0;
+
+  // Validate data before computing
+  if (!Number.isFinite(accelX) || !Number.isFinite(accelY) || !Number.isFinite(accelZ)) {
+    risks.riskLevel = "warning";
+    return { ...risks, detections: [{ type: "SENSOR_INVALID", reason: "Invalid accelerometer values" }] };
+  }
 
   // Calculate magnitude of acceleration (3D)
-  const accelMagnitude = Math.sqrt(
-    accelerometer_x ** 2 + accelerometer_y ** 2 + accelerometer_z ** 2
-  );
+  const accelMagnitude = Math.sqrt(accelX ** 2 + accelY ** 2 + accelZ ** 2);
 
   // 1. GPS Jump Detection
   if (previousLocation) {
@@ -279,11 +289,10 @@ export const quickSpoofCheck = (currentLocation, previousLocation, sensorData) =
 
   // Check for zero movement with sensor activity
   if (sensorData && distance < 2) {
-    const accelMag = Math.sqrt(
-      sensorData.accelerometer_x ** 2 +
-        sensorData.accelerometer_y ** 2 +
-        sensorData.accelerometer_z ** 2
-    );
+    const ax = Number(sensorData.accelerometer_x) || 0;
+    const ay = Number(sensorData.accelerometer_y) || 0;
+    const az = Number(sensorData.accelerometer_z) || 0;
+    const accelMag = Math.sqrt(ax ** 2 + ay ** 2 + az ** 2);
     if (accelMag > 15) {
       return {
         isSuspicious: true,

@@ -33,25 +33,38 @@ export default function UploadScreen() {
       return;
     }
 
-    const shot = await cameraRef.current.takePictureAsync({ quality: 0.7 });
-    setPhotoUri(shot.uri);
-    setUploadResult("Photo captured. Ready to upload.");
+    try {
+      const shot = await cameraRef.current.takePictureAsync({ quality: 0.7 });
+      setPhotoUri(shot.uri);
+      setUploadResult("Photo captured. Ready to upload.");
+    } catch (error) {
+      console.error("Camera capture failed:", error);
+      setUploadResult("Unable to capture photo; try again.");
+    }
   };
 
   const submitUpload = async () => {
+    const numericTaskId = Number(taskId);
+
     if (!taskId.trim() || !photoUri) {
       setUploadResult("Please capture a photo and enter task id.");
+      return;
+    }
+
+    if (!Number.isFinite(numericTaskId) || numericTaskId <= 0) {
+      setUploadResult("Invalid task id. Please enter a valid numeric task id.");
       return;
     }
 
     try {
       setLoading(true);
       const data = await apiRequest("post", "/upload", {
-        task_id: Number(taskId),
+        task_id: numericTaskId,
         file_path: photoUri,
       });
       setUploadResult(`Uploaded: ${data.file_path}`);
     } catch (err) {
+      console.error("Upload failed:", err);
       setUploadResult(err?.response?.data?.detail || "Upload failed");
     } finally {
       setLoading(false);

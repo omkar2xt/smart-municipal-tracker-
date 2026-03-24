@@ -1,26 +1,23 @@
 import { useEffect, useState } from 'react';
 
 export default function DarkModeToggle() {
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    // Check for saved preference or system preference
-    let shouldBeDark = false;
+  const [isDark, setIsDark] = useState(() => {
     try {
       const saved = localStorage.getItem('theme');
-      shouldBeDark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
     } catch (error) {
-      console.error('localStorage access failed:', error);
-      shouldBeDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      console.warn('localStorage access failed:', error);
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
+  });
 
-    setIsDark(shouldBeDark);
-    if (shouldBeDark) {
+  useEffect(() => {
+    if (isDark) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, []);
+  }, [isDark]);
 
   const toggleDarkMode = () => {
     const newValue = !isDark;
@@ -28,10 +25,18 @@ export default function DarkModeToggle() {
 
     if (newValue) {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
+      try {
+        localStorage.setItem('theme', 'dark');
+      } catch (error) {
+        console.warn('Failed to save theme to localStorage:', error);
+      }
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+      try {
+        localStorage.setItem('theme', 'light');
+      } catch (error) {
+        console.warn('Failed to save theme to localStorage:', error);
+      }
     }
   };
 

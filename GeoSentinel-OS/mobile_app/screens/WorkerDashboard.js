@@ -16,21 +16,28 @@ export default function WorkerDashboard({ navigation, user, onLogout }) {
     uploads: 0,
     totalPending: 0,
   });
-  const [isOnline, setIsOnline] = React.useState(true);
+  const [isOnline, setIsOnline] = React.useState(null);
   const [batteryLevel, setBatteryLevel] = React.useState(0);
   const [syncing, setSyncing] = React.useState(false);
   const [syncMessage, setSyncMessage] = React.useState("");
   const autoSyncCleanupRef = React.useRef(null);
+  const syncMessageTimeoutRef = React.useRef(null);
+  const isMountedRef = React.useRef(true);
 
   // Initialize background tracking and monitoring
   React.useEffect(() => {
     let cleanupWatchers = () => {};
+    isMountedRef.current = true;
     initializeTracking();
     cleanupWatchers = setupWatchers();
 
     return () => {
+      isMountedRef.current = false;
       if (autoSyncCleanupRef.current) {
         autoSyncCleanupRef.current();
+      }
+      if (syncMessageTimeoutRef.current) {
+        clearTimeout(syncMessageTimeoutRef.current);
       }
       cleanupWatchers();
     };
@@ -53,7 +60,13 @@ export default function WorkerDashboard({ navigation, user, onLogout }) {
       // Setup auto sync
       autoSyncCleanupRef.current = syncService.setupAutoSync((result) => {
         setSyncMessage(`Auto-synced: ${result.totalSynced} records`);
-        setTimeout(() => setSyncMessage(""), 3000);
+        if (syncMessageTimeoutRef.current) {
+          clearTimeout(syncMessageTimeoutRef.current);
+        }
+        syncMessageTimeoutRef.current = setTimeout(() => {
+          if (isMountedRef.current) setSyncMessage("");
+          syncMessageTimeoutRef.current = null;
+        }, 3000);
         updateQueueStatus();
       });
     } catch (error) {
@@ -64,13 +77,25 @@ export default function WorkerDashboard({ navigation, user, onLogout }) {
   const setupWatchers = () => {
     // Watch battery level
     const batteryUnsubscribe = batteryOptimizationService.watchBatteryLevel((status) => {
+      if (!isMountedRef.current) return;
       setBatteryLevel(status.level);
     });
 
-    // Watch network Status
+    // Watch network status
     const networkUnsubscribe = wifiService.watchNetworkConnectivity((state) => {
+      if (!isMountedRef.current) return;
       setIsOnline(state.isConnected);
     });
+
+    // initial network state query
+    (async () => {
+      try {
+        const online = await wifiService.isNetworkConnected();
+        if (isMountedRef.current) setIsOnline(online);
+      } catch (error) {
+        console.error("Failed to determine initial network status:", error);
+      }
+    })();
 
     return () => {
       batteryUnsubscribe?.();
@@ -143,14 +168,19 @@ export default function WorkerDashboard({ navigation, user, onLogout }) {
 
   const handleLogout = async () => {
     try {
-      // Stop background tracking before logout
       if (backgroundTracking) {
-        await backgroundLocationService.stopBackgroundTracking();
+        try {
+          await backgroundLocationService.stopBackgroundTracking();
+        } catch (innerErr) {
+          console.error("Failed to stop background tracking before logout:", innerErr);
+        }
       }
-      await logout();
-      onLogout();
-    } catch (error) {
-      console.error("Logout error:", error);
+    } finally {
+      try {
+        await logout();
+      } catch (err) {
+        console.error("Logout service error:", err);
+      }
       onLogout();
     }
   };

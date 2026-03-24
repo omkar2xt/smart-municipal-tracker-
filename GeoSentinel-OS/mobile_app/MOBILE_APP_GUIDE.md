@@ -202,7 +202,7 @@ export default function LoginScreen({ navigation }) {
 
 **Test Credentials:**
 ```
-Email: worker@geosential.gov
+Email: worker@geosentinel.gov
 Password: worker123
 ```
 
@@ -231,7 +231,12 @@ const location = await Location.getCurrentPositionAsync({
 // Returns: { latitude, longitude, accuracy, altitude, heading, speed }
 
 // Get accelerometer data
-const accelData = await Sensors.getAccelerometerAsync();
+const accelData = await new Promise((resolve) => {
+  const subscription = Accelerometer.addListener((data) => {
+    subscription.remove();
+    resolve(data);
+  });
+});
 // Returns: { x, y, z } - motion vector
 
 // Check geofence (client-side warning)
@@ -544,6 +549,8 @@ export default function WorkerDashboard() {
 ```javascript
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import * as authService from './authService';
+import { navigationRef } from './navigation';  // Adjust path as needed
 
 const api = axios.create({
   baseURL: process.env.EXPO_PUBLIC_API_BASE_URL,
@@ -562,10 +569,10 @@ api.interceptors.request.use(async (config) => {
 // Handle 401 errors
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401) {
       // Token expired, navigate to login
-      storageService.clearAuth();
+      await authService.logout();
       navigationRef.navigate('Login');
     }
     return Promise.reject(error);
@@ -802,8 +809,11 @@ export const syncService = {
   },
 
   setupAutoSync(intervalMinutes = 5) {
-    return setInterval(() => {
-      navigator.onLine && this.syncOfflineData();
+    return setInterval(async () => {
+      const state = await NetInfo.fetch();
+      if (state.isConnected) {
+        this.syncOfflineData();
+      }
     }, intervalMinutes * 60 * 1000);
   },
 };
@@ -947,17 +957,19 @@ await SecureStore.deleteItemAsync('authToken');
 ### API Request Signing (Optional)
 
 ```javascript
-import crypto from 'crypto';
+import * as Crypto from 'expo-crypto';
 
-const signRequest = (payload, secret) => {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(JSON.stringify(payload))
-    .digest('hex');
+const signRequest = async (payload, secret) => {
+  const message = JSON.stringify(payload);
+  return await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    message,
+    { key: secret, algorithm: Crypto.CryptoDigestAlgorithm.HMAC_SHA256 }
+  );
 };
 
-api.interceptors.request.use((config) => {
-  const signature = signRequest(config.data, JWT_SECRET);
+api.interceptors.request.use(async (config) => {
+  const signature = await signRequest(config.data, JWT_SECRET);
   config.headers['X-Signature'] = signature;
   return config;
 });
@@ -1000,19 +1012,19 @@ async function batchRequests(requests) {
 
 ```
 Role: Worker
-Email: worker@geosential.gov
+Email: worker@geosentinel.gov
 Password: worker123
 
 Role: Taluka Admin  
-Email: taluka_admin@geosential.gov
+Email: taluka_admin@geosentinel.gov
 Password: admin123
 
 Role: District Admin
-Email: district_admin@geosential.gov
+Email: district_admin@geosentinel.gov
 Password: admin123
 
 Role: State Admin
-Email: state_admin@geosential.gov
+Email: state_admin@geosentinel.gov
 Password: admin123
 ```
 

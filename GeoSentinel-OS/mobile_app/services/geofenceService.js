@@ -42,11 +42,26 @@ const distanceToPolygonEdge = (lat, lon, polygon) => {
 /**
  * Calculate distance from point to line segment
  */
+const degreesToMeters = (lat, lon, originLat, originLon) => {
+  const earthRadius = 6371000;
+  const latRad = (lat * Math.PI) / 180;
+  const lonRad = (lon * Math.PI) / 180;
+  const originLatRad = (originLat * Math.PI) / 180;
+  const originLonRad = (originLon * Math.PI) / 180;
+  const x = (lonRad - originLonRad) * earthRadius * Math.cos((latRad + originLatRad) / 2);
+  const y = (latRad - originLatRad) * earthRadius;
+  return { x, y };
+};
+
 const pointToLineSegmentDistance = (px, py, x1, y1, x2, y2) => {
-  const A = px - x1;
-  const B = py - y1;
-  const C = x2 - x1;
-  const D = y2 - y1;
+  const p = degreesToMeters(px, py, px, py);
+  const a = degreesToMeters(x1, y1, px, py);
+  const b = degreesToMeters(x2, y2, px, py);
+
+  const A = p.x - a.x;
+  const B = p.y - a.y;
+  const C = b.x - a.x;
+  const D = b.y - a.y;
 
   const dot = A * C + B * D;
   const lenSq = C * C + D * D;
@@ -57,18 +72,18 @@ const pointToLineSegmentDistance = (px, py, x1, y1, x2, y2) => {
   let xx, yy;
 
   if (param < 0) {
-    xx = x1;
-    yy = y1;
+    xx = a.x;
+    yy = a.y;
   } else if (param > 1) {
-    xx = x2;
-    yy = y2;
+    xx = b.x;
+    yy = b.y;
   } else {
-    xx = x1 + param * C;
-    yy = y1 + param * D;
+    xx = a.x + param * C;
+    yy = a.y + param * D;
   }
 
-  const dx = px - xx;
-  const dy = py - yy;
+  const dx = p.x - xx;
+  const dy = p.y - yy;
   return Math.sqrt(dx * dx + dy * dy);
 };
 
