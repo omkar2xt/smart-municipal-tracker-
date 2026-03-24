@@ -4,11 +4,13 @@ Includes JWT handling, password hashing, and role-based access control
 """
 
 from datetime import datetime, timedelta
+import hashlib
+import logging
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from models.user_model import User
 
@@ -22,16 +24,42 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 # HTTP Bearer scheme
 security = HTTPBearer()
+logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt"""
-    return pwd_context.hash(password)
+    normalized = password
+    if len(password.encode("utf-8")) > 72:
+        # bcrypt ignores bytes past 72; normalize to preserve deterministic verification.
+        normalized = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return pwd_context.hash(normalized)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    # First try legacy/raw verification so existing stored hashes continue to work.
+    try:
+        if pwd_context.verify(plain_password, hashed_password):
+            return True
+    except ValueError:
+        # Passlib+bcrypt can raise for >72-byte inputs; fallback path handles this case.
+        pass
+
+    # Fallback for long UTF-8 passwords that require normalization.
+    if len(plain_password.encode("utf-8")) > 72:
+        normalized = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+        try:
+            if pwd_context.verify(normalized, hashed_password):
+                logger.warning(
+                    "Long-password fallback verification succeeded. "
+                    "User hash should be migrated on next password update."
+                )
+                return True
+        except ValueError:
+            return False
+
+    return False
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
@@ -74,7 +102,7 @@ def decode_access_token(token: str) -> Dict[str, Any]:
 
 
 async def get_current_user(
-    credentials: HTTPAuthCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(lambda: None)  # Placeholder, will be injected
 ) -> Dict[str, Any]:
     """

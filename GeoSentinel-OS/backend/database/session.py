@@ -7,11 +7,12 @@ from collections.abc import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from config.settings import get_settings
+
+settings = get_settings()
+
 # Database URL from environment or default
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://geosentinel:password@localhost/geosentinel_db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", settings.database_url)
 
 # Connection arguments
 connect_args = {}

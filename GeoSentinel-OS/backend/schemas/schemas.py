@@ -91,6 +91,7 @@ class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     assigned_to: int
+    fund_allocated: Optional[float] = Field(default=0, ge=0)
     expected_latitude: Optional[float] = None
     expected_longitude: Optional[float] = None
     geofence_id: Optional[str] = None
@@ -109,6 +110,7 @@ class TaskResponse(BaseModel):
     id: int
     title: str
     description: Optional[str]
+    fund_allocated: float
     status: TaskStatus
     assigned_to: int
     assigned_by: int

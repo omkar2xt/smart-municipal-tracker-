@@ -682,6 +682,117 @@ Add to crontab:
 
 ---
 
+## ☁️ Managed Cloud Deployment (AWS / Azure / GCP)
+
+This backend is now container-ready via `Dockerfile` and `.dockerignore`.
+
+### 1. Build Container Locally
+
+```bash
+cd GeoSentinel-OS/backend
+docker build -t geosentinel-api:latest .
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL="postgresql://postgres:OG@host.docker.internal:5432/geosentinel_db" \
+  -e SECRET_KEY="replace-with-strong-secret" \
+  -e DEBUG=False \
+  geosentinel-api:latest
+```
+
+### 2. AWS (ECR + ECS Fargate)
+
+```bash
+# Set variables
+AWS_REGION=ap-south-1
+AWS_ACCOUNT_ID=<your-account-id>
+REPO=geosentinel-api
+
+# Create ECR repository (one-time)
+aws ecr create-repository --repository-name $REPO --region $AWS_REGION
+
+# Login to ECR
+aws ecr get-login-password --region $AWS_REGION | \
+docker login --username AWS --password-stdin \
+$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+# Build and push image
+docker build -t $REPO:latest .
+docker tag $REPO:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO:latest
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO:latest
+```
+
+Deploy to ECS Fargate:
+- Create ECS cluster and Fargate service.
+- Use container port `8080`.
+- Set env vars: `DATABASE_URL`, `SECRET_KEY`, `DEBUG=False`, `CORS_ORIGINS`.
+- Attach ALB target group health check path: `/health`.
+
+### 3. Azure (Container Registry + Container Apps)
+
+```bash
+RG=geosentinel-rg
+LOC=centralindia
+ACR=geosentinelacr
+APP=geosentinel-api
+
+az group create -n $RG -l $LOC
+az acr create -g $RG -n $ACR --sku Basic
+az acr build -r $ACR -t geosentinel-api:latest .
+
+# Create Container App environment and app
+az containerapp env create -g $RG -n geosentinel-env -l $LOC
+az containerapp create \
+  -g $RG \
+  -n $APP \
+  --environment geosentinel-env \
+  --image $ACR.azurecr.io/geosentinel-api:latest \
+  --target-port 8080 \
+  --ingress external \
+  --registry-server $ACR.azurecr.io
+```
+
+Then set secrets/env vars in Container App:
+- `DATABASE_URL`
+- `SECRET_KEY`
+- `DEBUG=False`
+- `CORS_ORIGINS`
+
+### 4. GCP (Artifact Registry + Cloud Run)
+
+```bash
+PROJECT_ID=<your-project-id>
+REGION=asia-south1
+REPO=geosentinel
+SERVICE=geosentinel-api
+
+gcloud config set project $PROJECT_ID
+gcloud artifacts repositories create $REPO \
+  --repository-format=docker \
+  --location=$REGION
+
+gcloud builds submit --tag $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/geosentinel-api:latest
+
+gcloud run deploy $SERVICE \
+  --image $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/geosentinel-api:latest \
+  --region $REGION \
+  --platform managed \
+  --allow-unauthenticated \
+  --port 8080
+```
+
+Then configure Cloud Run env vars:
+- `DATABASE_URL`
+- `SECRET_KEY`
+- `DEBUG=False`
+- `CORS_ORIGINS`
+
+### 5. Managed PostgreSQL Recommendations
+
+- AWS: RDS PostgreSQL
+- Azure: Azure Database for PostgreSQL Flexible Server
+- GCP: Cloud SQL for PostgreSQL
+
+Use SSL-enabled `DATABASE_URL` in production and restrict network access to your app service only.
+
 ## 📞 Support & Documentation
 
 - **API Docs**: http://localhost:8000/docs (Swagger)

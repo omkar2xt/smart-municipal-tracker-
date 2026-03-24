@@ -43,11 +43,18 @@ def _sign(message: bytes) -> str:
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    normalized = password
+    if len(password.encode("utf-8")) > 72:
+        # bcrypt ignores bytes past 72; normalize so hash/verify remain stable.
+        normalized = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return pwd_context.hash(normalized)
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    return pwd_context.verify(plain_password, password_hash)
+    normalized = plain_password
+    if len(plain_password.encode("utf-8")) > 72:
+        normalized = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+    return pwd_context.verify(normalized, password_hash)
 
 
 def create_access_token(payload: dict[str, Any]) -> str:

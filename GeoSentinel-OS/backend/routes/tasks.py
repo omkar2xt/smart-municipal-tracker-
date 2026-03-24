@@ -41,6 +41,7 @@ def create_task(
     task = Task(
         title=payload.title,
         description=payload.description,
+        fund_allocated=payload.fund_allocated or 0,
         assigned_to=payload.assigned_to,
         assigned_by=current_user.id,
         expected_latitude=payload.expected_latitude,
@@ -59,7 +60,7 @@ def create_task(
     db.refresh(task)
     
     return TaskResponse(
-        id=task.id, title=task.title, description=task.description, status=task.status,
+        id=task.id, title=task.title, description=task.description, fund_allocated=float(task.fund_allocated), status=task.status,
         assigned_to=task.assigned_to, assigned_by=task.assigned_by,
         before_image_path=task.before_image_path, after_image_path=task.after_image_path,
         expected_latitude=task.expected_latitude, expected_longitude=task.expected_longitude,
@@ -105,7 +106,7 @@ def get_tasks(
     tasks = query.order_by(Task.created_at.desc()).all()
     return TaskListResponse(total=len(tasks), records=[
         TaskResponse(
-            id=t.id, title=t.title, description=t.description, status=t.status,
+            id=t.id, title=t.title, description=t.description, fund_allocated=float(t.fund_allocated), status=t.status,
             assigned_to=t.assigned_to, assigned_by=t.assigned_by,
             before_image_path=t.before_image_path, after_image_path=t.after_image_path,
             expected_latitude=t.expected_latitude, expected_longitude=t.expected_longitude,
@@ -143,7 +144,7 @@ def complete_task(
     db.refresh(task)
     
     return TaskResponse(
-        id=task.id, title=task.title, description=task.description, status=task.status,
+        id=task.id, title=task.title, description=task.description, fund_allocated=float(task.fund_allocated), status=task.status,
         assigned_to=task.assigned_to, assigned_by=task.assigned_by,
         before_image_path=task.before_image_path, after_image_path=task.after_image_path,
         expected_latitude=task.expected_latitude, expected_longitude=task.expected_longitude,

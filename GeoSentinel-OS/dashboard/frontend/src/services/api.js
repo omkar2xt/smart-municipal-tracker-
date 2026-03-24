@@ -5,12 +5,50 @@ const api = axios.create({
   timeout: 10000,
 });
 
+export function setAuthToken(token) {
+  if (token) {
+    api.defaults.headers.common.Authorization = `Bearer ${token}`;
+  } else {
+    delete api.defaults.headers.common.Authorization;
+  }
+}
+
+export async function loginRequest(email, password) {
+  const response = await api.post("/auth/login", { email, password });
+  return response.data;
+}
+
+export async function fetchCurrentUser() {
+  const response = await api.get("/users/me");
+  return response.data;
+}
+
+export async function fetchStats() {
+  try {
+    const response = await api.get("/admin/stats");
+    return response.data || {};
+  } catch (err) {
+    if (err?.response?.status === 403) {
+      return {};
+    }
+    console.error("fetchStats failed", {
+      status: err?.response?.status,
+      data: err?.response?.data,
+      message: err?.message,
+    });
+    throw new Error(err?.response?.data?.detail || "Unable to fetch stats");
+  }
+}
+
 export async function fetchWorkers() {
   try {
-    const response = await api.get("/users");
+    const response = await api.get("/admin/users");
     const data = response.data;
     return Array.isArray(data?.users) ? data.users : (Array.isArray(data) ? data : []);
   } catch (error) {
+    if (error?.response?.status === 403) {
+      return [];
+    }
     throw new Error(error?.response?.data?.detail || "Unable to fetch workers");
   }
 }
@@ -31,8 +69,29 @@ export async function fetchLocations() {
     const data = response.data;
     return Array.isArray(data?.records) ? data.records : (Array.isArray(data) ? data : []);
   } catch (error) {
+    if (error?.response?.status === 403) {
+      try {
+        const fallback = await api.get("/tracking/locations");
+        const data = fallback.data;
+        return Array.isArray(data) ? data : (Array.isArray(data?.records) ? data.records : []);
+      } catch {
+        return [];
+      }
+    }
     throw new Error(error?.response?.data?.detail || "Unable to fetch locations");
   }
+}
+
+export async function downloadReport(endpoint, filename) {
+  const response = await api.get(endpoint, { responseType: "blob" });
+  const url = window.URL.createObjectURL(response.data);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 export default api;

@@ -2,8 +2,9 @@
 Task model for tracking work assignments with completion proof
 """
 
+from decimal import Decimal
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.base import Base
@@ -17,6 +18,7 @@ class Task(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    fund_allocated: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), nullable=False, default=TaskStatus.PENDING, index=True)
     assigned_to: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     assigned_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)

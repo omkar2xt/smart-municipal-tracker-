@@ -9,7 +9,7 @@ from config.settings import get_settings
 from database.base import Base
 from database.session import engine
 from database.init_db import seed_default_users
-from routes import admin_new, attendance, auth, sync, tasks, tracking_new, upload, users_new
+from routes import admin_new, attendance, auth, reports_new, sync, tasks, tracking_new, upload, users_new
 from services.spoof_detection import assert_spoof_detection_enabled_for_production
 
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +25,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
@@ -47,6 +48,7 @@ app.include_router(upload.router)
 app.include_router(sync.router)
 app.include_router(users_new.router)
 app.include_router(admin_new.router)
+app.include_router(reports_new.router)
 
 
 @app.on_event("startup")
@@ -59,7 +61,7 @@ def startup() -> None:
         logger.info("GeoSentinel OS backend initialized")
     except Exception as exc:
         logger.error(
-            f"Failed to initialize database: {exc.__class__.__name__}",
+            f"Failed to initialize application: {exc.__class__.__name__}: {exc}",
             exc_info=True,
         )
         raise SystemExit(1) from exc

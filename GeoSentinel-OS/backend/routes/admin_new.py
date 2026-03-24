@@ -19,10 +19,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/users", summary="Get all users")
 def get_all_users(
-    current_user: User = Depends(require_role(Role.STATE_ADMIN)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.STATE_ADMIN)),
     db: Session = Depends(get_db)
 ):
-    """Get all users (state admin only)"""
+    """Get all users (admin and state admin)."""
     users = db.query(User).all()
     return {
         "total": len(users),
@@ -41,7 +41,8 @@ def get_attendance_report(
     district: str = None,
     taluka: str = None,
     current_user: User = Depends(require_role(
-        Role.STATE_ADMIN, Role.DISTRICT_ADMIN, Role.TALUKA_ADMIN,
+        Role.ADMIN, Role.SUB_ADMIN, Role.TALUKA_ADMIN,
+        Role.STATE_ADMIN, Role.DISTRICT_ADMIN,
     )),
     db: Session = Depends(get_db)
 ):
@@ -73,14 +74,33 @@ def get_attendance_report(
 @router.get("/reports/spoof-detections", summary="Get spoof detection report")
 def get_spoof_detections(
     current_user: User = Depends(require_role(
-        Role.STATE_ADMIN, Role.DISTRICT_ADMIN, Role.TALUKA_ADMIN,
+        Role.ADMIN, Role.SUB_ADMIN, Role.TALUKA_ADMIN,
+        Role.STATE_ADMIN, Role.DISTRICT_ADMIN,
     )),
     db: Session = Depends(get_db)
 ):
     """Get locations flagged for spoof detection"""
-    records = db.query(LocationLog).filter(
+    query = db.query(LocationLog).join(User, User.id == LocationLog.user_id).filter(
         LocationLog.spoof_detection_flag == True
-    ).order_by(LocationLog.timestamp.desc()).limit(500).all()
+    )
+
+    if current_user.role in (Role.ADMIN, Role.SUB_ADMIN):
+        pass
+    elif current_user.role == Role.STATE_ADMIN:
+        query = query.filter(User.state == current_user.state)
+    elif current_user.role == Role.DISTRICT_ADMIN:
+        query = query.filter(
+            User.state == current_user.state,
+            User.district == current_user.district,
+        )
+    elif current_user.role == Role.TALUKA_ADMIN:
+        query = query.filter(
+            User.state == current_user.state,
+            User.district == current_user.district,
+            User.taluka == current_user.taluka,
+        )
+
+    records = query.order_by(LocationLog.timestamp.desc()).limit(500).all()
     
     return {
         "total": len(records),
@@ -94,7 +114,7 @@ def get_spoof_detections(
 
 @router.get("/stats", summary="Get system statistics")
 def get_system_stats(
-    current_user: User = Depends(require_role(Role.STATE_ADMIN)),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.STATE_ADMIN)),
     db: Session = Depends(get_db)
 ):
     """Get system-wide statistics"""
@@ -102,6 +122,8 @@ def get_system_stats(
     total_attendance = db.query(Attendance).count()
     total_locations = db.query(LocationLog).count()
     spoof_detections = db.query(LocationLog).filter(LocationLog.spoof_detection_flag == True).count()
+    taluka_count = db.query(User).filter(User.role == Role.TALUKA_ADMIN).count()
+    worker_count = db.query(User).filter(User.role == Role.WORKER).count()
     
     return {
         "total_users": total_users,
@@ -109,9 +131,13 @@ def get_system_stats(
         "total_location_logs": total_locations,
         "spoof_detections": spoof_detections,
         "by_role": {
+            "admin": db.query(User).filter(User.role == Role.ADMIN).count(),
+            "sub_admin": db.query(User).filter(User.role == Role.SUB_ADMIN).count(),
+            "taluka_admin": taluka_count,
+            "worker": worker_count,
             "state_admin": db.query(User).filter(User.role == Role.STATE_ADMIN).count(),
             "district_admin": db.query(User).filter(User.role == Role.DISTRICT_ADMIN).count(),
-            "taluka_admin": db.query(User).filter(User.role == Role.TALUKA_ADMIN).count(),
-            "worker": db.query(User).filter(User.role == Role.WORKER).count()
+            "legacy_taluka_admin": taluka_count,
+            "legacy_worker": worker_count
         }
     }

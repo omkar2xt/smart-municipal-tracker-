@@ -1,0 +1,41 @@
+@import url("https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply rounded-2xl border border-white/50 bg-white/75 shadow-card backdrop-blur;
+  }
+
+  .section-title {
+    @apply text-2xl font-bold text-civic-900 md:text-3xl;
+  }
+
+  .section-subtitle {
+    @apply mt-2 max-w-3xl text-slate-600;
+  }
+
+  .action-btn {
+    @apply inline-flex items-center justify-center rounded-xl px-5 py-3 font-semibold transition-all duration-300;
+  }
+}
+
+.hero-grid {
+  background-image: radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.22), transparent 45%),
+    radial-gradient(circle at 85% 18%, rgba(37, 99, 235, 0.25), transparent 35%),
+    linear-gradient(135deg, #ecfeff, #eff6ff 45%, #ecfdf5);
+}
+
+.city-overlay {
+  background-image: linear-gradient(to top, rgba(30, 58, 138, 0.12), rgba(2, 132, 199, 0.05)),
+    repeating-linear-gradient(90deg, rgba(15, 23, 42, 0.04) 0, rgba(15, 23, 42, 0.04) 1px, transparent 1px, transparent 40px),
+    repeating-linear-gradient(0deg, rgba(15, 23, 42, 0.04) 0, rgba(15, 23, 42, 0.04) 1px, transparent 1px, transparent 40px);
+}
