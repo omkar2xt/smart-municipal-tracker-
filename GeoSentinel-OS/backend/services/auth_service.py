@@ -18,6 +18,11 @@ from models.user_model import User
 settings = get_settings()
 JWT_SECRET = os.getenv("JWT_SECRET") or settings.secret_key
 if not JWT_SECRET or JWT_SECRET == "change-me-in-production":
+    if not getattr(settings, "debug", False):
+        raise RuntimeError(
+            "JWT_SECRET is not configured. Set JWT_SECRET environment variable or configure "
+            "debug mode for development."
+        )
     JWT_SECRET = "dev-insecure-key-change-in-production"
 JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", str(settings.access_token_expire_minutes * 60)))
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

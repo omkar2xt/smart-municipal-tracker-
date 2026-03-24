@@ -69,7 +69,7 @@ export default function App() {
       <RoleSelector role={role} onChange={setRole} />
 
       {loading ? <div className="loading">Loading dashboard data...</div> : null}
-      {!loading && error ? <div className="loading">{error}</div> : null}
+      {!loading && error ? <div className="error">{error}</div> : null}
 
       <div className="grid">
         <WorkersTable workers={visibleWorkers} />

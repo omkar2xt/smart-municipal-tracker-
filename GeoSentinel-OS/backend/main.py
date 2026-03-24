@@ -27,7 +27,16 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "X-Request-ID",
+        "X-Correlation-ID",
+        "Cache-Control",
+        "If-None-Match",
+        "If-Modified-Since",
+    ],
 )
 
 app.include_router(auth.router)
@@ -43,10 +52,17 @@ app.include_router(admin_new.router)
 @app.on_event("startup")
 def startup() -> None:
     """Initialize database and execute startup checks."""
-    assert_spoof_detection_enabled_for_production()
-    Base.metadata.create_all(bind=engine)
-    seed_default_users()
-    logger.info("GeoSentinel OS backend initialized")
+    try:
+        assert_spoof_detection_enabled_for_production()
+        Base.metadata.create_all(bind=engine)
+        seed_default_users()
+        logger.info("GeoSentinel OS backend initialized")
+    except Exception as exc:
+        logger.error(
+            f"Failed to initialize database: {exc.__class__.__name__}",
+            exc_info=True,
+        )
+        raise SystemExit(1) from exc
 
 
 @app.get("/health", summary="Health check")

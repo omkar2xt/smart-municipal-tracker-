@@ -33,13 +33,19 @@ def bulk_sync(
         db.commit()
         return result
     except Exception as exc:
+        import uuid
         db.rollback()
+        correlation_id = str(uuid.uuid4())
+        logger.error(
+            f"Sync error (correlation_id={correlation_id})",
+            exc_info=True,
+        )
         write_audit_log(
             db,
             action="sync.bulk",
             status="failure",
             user_id=current_user.id,
-            details=f"sync_error={str(exc)}",
+            detail=f"sync_error (correlation_id={correlation_id}, type={exc.__class__.__name__})",
         )
         db.commit()
         raise HTTPException(

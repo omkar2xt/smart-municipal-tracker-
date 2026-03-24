@@ -74,7 +74,7 @@ def upload_task_proof(
         action="task.upload",
         status="success",
         user_id=current_user.id,
-        details=f"task_id={task.id},stage={payload.stage}",
+        detail=f"task_id={task.id},stage={payload.stage}",
     )
     db.commit()
     return UploadResponse(file_path=relative_proof_path)

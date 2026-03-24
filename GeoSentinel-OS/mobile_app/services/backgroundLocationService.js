@@ -6,7 +6,7 @@ const BACKGROUND_LOCATION_TASK = "background_location_tracking";
 let isTaskDefined = false;
 
 const normalizeHeading = (value) => {
-  if (typeof value !== "number" || Number.isNaN(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
   const normalized = value % 360;
