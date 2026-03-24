@@ -2,10 +2,12 @@
 
 from pydantic import BaseModel
 
+from models.enums import Role, TaskStatus
+
 
 class TaskModel(BaseModel):
     id: int
     title: str
-    assigned_by_role: str
-    assigned_to_role: str
-    status: str
+    assigned_by_role: Role
+    assigned_to_role: Role
+    status: TaskStatus

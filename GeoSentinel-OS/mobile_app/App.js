@@ -1,10 +1,16 @@
 import React from "react";
-import { SafeAreaView, Text } from "react-native";
+import { SafeAreaView, StyleSheet, Text } from "react-native";
 
 export default function App() {
   return (
-    <SafeAreaView>
+    <SafeAreaView style={styles.container}>
       <Text>GeoSentinel OS Mobile App</Text>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});
