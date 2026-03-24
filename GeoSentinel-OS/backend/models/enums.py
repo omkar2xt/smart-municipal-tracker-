@@ -10,6 +10,7 @@ class Role(str, Enum):
     DISTRICT_ADMIN = "district_admin"
     TALUKA_ADMIN = "taluka_admin"
     FIELD_WORKER = "worker"
+    WORKER = "worker"
     ADMIN = "admin"
     SUPERVISOR = "supervisor"
 

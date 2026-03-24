@@ -24,6 +24,7 @@ class TokenResponse(BaseModel):
 class AttendanceCreate(BaseModel):
     latitude: float
     longitude: float
+    accelerometer_magnitude: float | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator("latitude")
@@ -47,12 +48,16 @@ class AttendanceResponse(BaseModel):
     latitude: float
     longitude: float
     timestamp: datetime
+    geofence_valid: bool = True
 
 
 class TaskCreate(BaseModel):
     title: str
     assigned_to: int
     status: TaskStatus = TaskStatus.PENDING
+    expected_latitude: float | None = None
+    expected_longitude: float | None = None
+    due_at: datetime | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -66,11 +71,17 @@ class TaskResponse(BaseModel):
     assigned_to: int
     assigned_by: int
     image_proof: str | None = None
+    before_image_proof: str | None = None
+    after_image_proof: str | None = None
+    expected_latitude: float | None = None
+    expected_longitude: float | None = None
+    due_at: datetime | None = None
 
 
 class LocationCreate(BaseModel):
     latitude: float
     longitude: float
+    accelerometer_magnitude: float | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -80,6 +91,8 @@ class LocationResponse(BaseModel):
     latitude: float
     longitude: float
     timestamp: datetime
+    anomaly_detected: bool = False
+    anomaly_reason: str | None = None
 
 
 class UploadResponse(BaseModel):
@@ -89,3 +102,34 @@ class UploadResponse(BaseModel):
 class UploadCreate(BaseModel):
     task_id: int
     file_path: str
+    stage: Literal["before", "after"] = "after"
+    captured_latitude: float | None = None
+    captured_longitude: float | None = None
+    captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SyncLocationRecord(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp: datetime
+    accelerometer_magnitude: float | None = None
+
+
+class SyncAttendanceRecord(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp: datetime
+    accelerometer_magnitude: float | None = None
+
+
+class BulkSyncRequest(BaseModel):
+    attendance: list[SyncAttendanceRecord] = Field(default_factory=list)
+    locations: list[SyncLocationRecord] = Field(default_factory=list)
+
+
+class BulkSyncResponse(BaseModel):
+    attendance_inserted: int
+    attendance_duplicates: int
+    locations_inserted: int
+    locations_duplicates: int
+    anomaly_count: int

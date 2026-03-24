@@ -99,7 +99,7 @@ export const detectSpoofing = (location, sensorData) => {
   const gpsMoved = distanceMovedMeters >= GPS_MOVE_THRESHOLD_METERS;
 
   const magnitude = sensorData?.magnitude;
-  const sensorAvailable = sensorData && typeof magnitude === "number";
+  const sensorAvailable = sensorData && Number.isFinite(magnitude);
   const movementScore = sensorAvailable ? Math.abs(magnitude - 1) : null;
   const hasAccelerometerMovement =
     sensorAvailable && movementScore >= MOTION_THRESHOLD_G;
