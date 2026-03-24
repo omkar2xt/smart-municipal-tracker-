@@ -1,34 +1,33 @@
-"""User domain model with hierarchical role mapping."""
+from sqlalchemy import Enum, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from pydantic import BaseModel, Field
-
+from database.base import Base
 from models.enums import Role
 from models.redaction import redact_value
 
 
-class UserModel(BaseModel):
-    id: int
-    name: str = Field(..., repr=False)
-    role: Role = Field(..., description="Allowed governance role for RBAC enforcement")
-    district: str | None = Field(default=None, repr=False)
-    taluka: str | None = Field(default=None, repr=False)
+class User(Base):
+    __tablename__ = "users"
 
-    def model_dump(self, *args, include_sensitive: bool = False, **kwargs) -> dict:
-        """Return redacted data by default; allow explicit sensitive export when needed."""
-        data = super().model_dump(*args, **kwargs)
-        if include_sensitive:
-            return data
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    role: Mapped[Role] = mapped_column(Enum(Role), nullable=False, index=True)
+    district: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    taluka: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
 
-        data["name"] = redact_value(self.name)
-        data["district"] = redact_value(self.district)
-        data["taluka"] = redact_value(self.taluka)
-        return data
+    attendance_records = relationship("Attendance", back_populates="user")
+    assigned_tasks = relationship("Task", foreign_keys="Task.assigned_to", back_populates="assignee")
+    created_tasks = relationship("Task", foreign_keys="Task.assigned_by", back_populates="assigner")
+    location_logs = relationship("LocationLog", back_populates="user")
 
     def to_log_dict(self) -> dict:
-        """Return a redacted dict safe for logs and diagnostics."""
-        data = self.model_dump(include_sensitive=False)
-        data["role"] = self.role.value
-        return data
+        return {
+            "id": self.id,
+            "name": redact_value(self.name),
+            "role": self.role.value,
+            "district": redact_value(self.district),
+            "taluka": redact_value(self.taluka),
+        }
 
     def __repr__(self) -> str:
-        return f"UserModel({self.to_log_dict()})"
+        return f"User({self.to_log_dict()})"

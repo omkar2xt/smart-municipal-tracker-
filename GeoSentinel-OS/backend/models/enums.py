@@ -9,7 +9,7 @@ class Role(str, Enum):
     STATE_ADMIN = "state_admin"
     DISTRICT_ADMIN = "district_admin"
     TALUKA_ADMIN = "taluka_admin"
-    FIELD_WORKER = "field_worker"
+    FIELD_WORKER = "worker"
     ADMIN = "admin"
     SUPERVISOR = "supervisor"
 
