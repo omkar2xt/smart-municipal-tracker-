@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Worker Dashboard – Smart Municipal Tracker</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <!-- Leaflet for map preview -->
+  <link rel="stylesheet" href="lib/leaflet.css"/>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="brand">🏙️ Municipal Tracker</div>
+  <div class="user-info">👤 <span id="user-name">Worker</span></div>
+  <button id="btn-logout">Sign Out</button>
+</nav>
+
+<div class="container">
+  <div id="worker-alert"></div>
+
+  <!-- GPS + Attendance card -->
+  <div class="card">
+    <div class="card-title">📍 GPS Attendance</div>
+    <div class="gps-indicator">
+      <div class="gps-dot acquiring"></div>
+      <span id="gps-text">Acquiring GPS…</span>
+    </div>
+    <div id="checkin-status"></div>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+      <button id="btn-checkin"  class="btn btn-success">✅ Check In</button>
+      <button id="btn-checkout" class="btn btn-warning" disabled>🏁 Check Out</button>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <!-- Tasks card -->
+    <div class="card" style="grid-column: 1 / -1">
+      <div class="card-title">📋 My Tasks</div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th><th>Description</th>
+              <th>Priority</th><th>Status</th><th>Update</th>
+            </tr>
+          </thead>
+          <tbody id="worker-tasks-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Image upload card -->
+    <div class="card">
+      <div class="card-title">📷 Upload Work Photo</div>
+      <div class="form-group">
+        <label>Task</label>
+        <select id="upload-task" class="form-control">
+          <option value="">— Select task —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Photo Type</label>
+        <select id="upload-type" class="form-control">
+          <option value="before">Before</option>
+          <option value="after">After</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Photo</label>
+        <input id="img-file" class="form-control" type="file"
+               accept="image/*" capture="environment"/>
+        <img id="img-preview" class="img-preview" alt="Preview"/>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="upload-notes" class="form-control" rows="2"
+                  placeholder="Optional notes…"></textarea>
+      </div>
+      <button id="btn-upload" class="btn btn-primary">📤 Upload</button>
+    </div>
+
+    <!-- Mini map card -->
+    <div class="card">
+      <div class="card-title">🗺️ My Location</div>
+      <div id="map"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/auth.js"></script>
+<script src="lib/leaflet.js"></script>
+<script src="js/worker.js"></script>
+<script>
+  // Initialize a small personal map after worker.js sets up currentPosition
+  let workerMap = null;
+  let workerMarker = null;
+
+  function initWorkerMap(lat, lon) {
+    if (!workerMap) {
+      workerMap = L.map("map").setView([lat, lon], 15);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+        maxZoom: 19,
+      }).addTo(workerMap);
+    }
+    if (workerMarker) workerMarker.setLatLng([lat, lon]);
+    else {
+      workerMarker = L.marker([lat, lon]).addTo(workerMap)
+        .bindPopup("📍 Your location").openPopup();
+    }
+    workerMap.setView([lat, lon], 15);
+  }
+
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(
+      (pos) => initWorkerMap(pos.coords.latitude, pos.coords.longitude),
+      () => {},
+      { enableHighAccuracy: true }
+    );
+  }
+</script>
+</body>
+</html>

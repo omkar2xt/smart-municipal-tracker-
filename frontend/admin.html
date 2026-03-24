@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard – Smart Municipal Tracker</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="lib/leaflet.css"/>
+  <style>
+    .tab-btn {
+      padding: .5rem 1.1rem;
+      border: none;
+      background: none;
+      font-size: .95rem;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .tab-btn.active { border-bottom-color: var(--primary); color: var(--primary); }
+    .tab-nav {
+      display: flex;
+      gap: .5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+    }
+    .tab-panel.hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="brand">🏙️ Municipal Tracker <span style="font-size:.8rem;opacity:.7;margin-left:.5rem">Admin</span></div>
+  <div class="user-info">👤 <span id="user-name">Admin</span></div>
+  <button id="btn-logout">Sign Out</button>
+</nav>
+
+<div class="container">
+  <div id="admin-alert"></div>
+
+  <!-- Stats row -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-present">—</div>
+      <div class="stat-label">Workers Present Today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-workers">—</div>
+      <div class="stat-label">Total Workers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-tasks-open">—</div>
+      <div class="stat-label">Open Tasks</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-tasks-done">—</div>
+      <div class="stat-label">Completed Tasks</div>
+    </div>
+  </div>
+
+  <!-- Tab navigation -->
+  <div class="tab-nav">
+    <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
+    <button class="tab-btn" data-tab="map">🗺️ Live Map</button>
+    <button class="tab-btn" data-tab="tasks">📋 Tasks</button>
+    <button class="tab-btn" data-tab="workers">👷 Workers</button>
+    <button class="tab-btn" data-tab="attendance">🕐 Attendance</button>
+  </div>
+
+  <!-- Dashboard tab -->
+  <div id="tab-dashboard" class="tab-panel">
+    <div class="card">
+      <div class="card-title">📡 Live Worker Status</div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Location</th><th>Status</th><th>Last Check-in</th><th>Zone</th></tr>
+          </thead>
+          <tbody id="live-feed-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map tab -->
+  <div id="tab-map" class="tab-panel hidden">
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between">
+        🗺️ Worker Locations &amp; Geo-Zones
+        <button class="btn btn-outline btn-sm" onclick="refreshLocations()">🔄 Refresh</button>
+      </div>
+      <div id="map"></div>
+      <p style="font-size:.8rem;color:var(--muted);margin-top:.5rem">
+        🔵 Blue circles = work zones &nbsp;|&nbsp; 🟢 Green dots = active workers &nbsp;|&nbsp; ⚪ Grey dots = checked out
+      </p>
+    </div>
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between">
+        🏁 Manage Geo-Zones
+        <button id="btn-new-zone" class="btn btn-primary btn-sm">+ Add Zone</button>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>Name</th><th>Latitude</th><th>Longitude</th><th>Radius (m)</th></tr></thead>
+          <tbody id="zones-body">
+            <tr><td colspan="4" style="text-align:center;color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tasks tab -->
+  <div id="tab-tasks" class="tab-panel hidden">
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between">
+        📋 Tasks
+        <button id="btn-new-task" class="btn btn-primary btn-sm">+ New Task</button>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th><th>Assigned To</th>
+              <th>Priority</th><th>Status</th><th>Due Date</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tasks-body">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workers tab -->
+  <div id="tab-workers" class="tab-panel hidden">
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between">
+        👷 Workers
+        <button id="btn-new-worker" class="btn btn-primary btn-sm">+ Register Worker</button>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Username</th><th>Phone</th><th>Zone</th><th>Registered</th></tr>
+          </thead>
+          <tbody id="workers-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Attendance tab -->
+  <div id="tab-attendance" class="tab-panel hidden">
+    <div class="card">
+      <div class="card-title">🕐 Today's Attendance</div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Worker</th><th>Check-in</th><th>Check-out</th>
+              <th>Location</th><th>Zone Status</th>
+            </tr>
+          </thead>
+          <tbody id="attendance-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Task modal ───────────────────────────────────── -->
+<div id="task-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('task-modal')">✕</button>
+    <h2 id="task-modal-title" style="margin-bottom:1.2rem">Task</h2>
+    <form id="task-form">
+      <input type="hidden" id="edit-task-id"/>
+      <div class="form-group">
+        <label>Title *</label>
+        <input id="edit-task-title" class="form-control" type="text" required/>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="edit-task-desc" class="form-control" rows="3"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Assign to Worker</label>
+          <select id="edit-task-worker" class="form-control">
+            <option value="">— Unassigned —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Zone</label>
+          <select id="edit-task-zone" class="form-control">
+            <option value="">— No zone —</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Priority</label>
+          <select id="edit-task-priority" class="form-control">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Due Date</label>
+          <input id="edit-task-due" class="form-control" type="date"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="edit-task-status" class="form-control">
+          <option value="pending">Pending</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+      <div style="display:none"><!-- reserved --></div>
+      <button class="btn btn-primary" type="submit" style="width:100%;justify-content:center">
+        💾 Save Task
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ─── Zone modal ───────────────────────────────────── -->
+<div id="zone-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('zone-modal')">✕</button>
+    <h2 style="margin-bottom:1.2rem">➕ New Work Zone</h2>
+    <form id="zone-form">
+      <div class="form-group">
+        <label>Zone Name *</label>
+        <input id="zone-name" class="form-control" type="text" required/>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Latitude *</label>
+          <input id="zone-lat" class="form-control" type="number" step="any" required/>
+        </div>
+        <div class="form-group">
+          <label>Longitude *</label>
+          <input id="zone-lon" class="form-control" type="number" step="any" required/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Radius (metres)</label>
+        <input id="zone-radius" class="form-control" type="number" value="200" min="50" max="5000"/>
+      </div>
+      <button class="btn btn-primary" type="submit" style="width:100%;justify-content:center">
+        ✅ Create Zone
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ─── Worker registration modal ────────────────────── -->
+<div id="worker-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('worker-modal')">✕</button>
+    <h2 style="margin-bottom:1.2rem">👷 Register Worker</h2>
+    <form id="worker-reg-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input id="new-name" class="form-control" type="text" required/>
+        </div>
+        <div class="form-group">
+          <label>Username *</label>
+          <input id="new-username" class="form-control" type="text" required/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Password *</label>
+          <input id="new-password" class="form-control" type="password" required/>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input id="new-phone" class="form-control" type="tel"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Assign Zone</label>
+        <select id="new-zone" class="form-control">
+          <option value="">— No zone —</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" type="submit" style="width:100%;justify-content:center">
+        ➕ Register Worker
+      </button>
+    </form>
+  </div>
+</div>
+
+<script src="js/auth.js"></script>
+<script src="lib/leaflet.js"></script>
+<script src="js/admin.js"></script>
+<script>
+  // Wire up attendance tab data load
+  document.querySelector('[data-tab="attendance"]').addEventListener("click", loadAttendance);
+
+  // Render zones table when map tab loads
+  document.querySelector('[data-tab="map"]').addEventListener("click", renderZonesTable);
+
+  async function loadAttendance() {
+    const records = await apiFetch("/attendance/today");
+    const tbody = document.getElementById("attendance-body");
+    if (!records.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted)">No attendance records today</td></tr>';
+      return;
+    }
+    tbody.innerHTML = records.map((r) => `
+      <tr>
+        <td>${r.name || "Unknown"}</td>
+        <td>${fmtDate(r.check_in_time)}</td>
+        <td>${r.check_out_time ? fmtDate(r.check_out_time) : "—"}</td>
+        <td>${r.latitude ? r.latitude.toFixed(5) : "—"}, ${r.longitude ? r.longitude.toFixed(5) : "—"}</td>
+        <td><span class="badge badge-${r.zone_status==='within'?'success':(r.zone_status==='outside'?'danger':'muted')}">${r.zone_status}</span></td>
+      </tr>`).join("");
+  }
+
+  function renderZonesTable() {
+    const tbody = document.getElementById("zones-body");
+    tbody.innerHTML = zones.map((z) => `
+      <tr>
+        <td>${z.name}</td>
+        <td>${z.lat}</td>
+        <td>${z.lon}</td>
+        <td>${z.radius_metres}</td>
+      </tr>`).join("");
+  }
+</script>
+</body>
+</html>

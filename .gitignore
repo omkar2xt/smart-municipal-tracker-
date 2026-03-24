@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project-specific
+database/tracker.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+node_modules/
+package.json
+package-lock.json
