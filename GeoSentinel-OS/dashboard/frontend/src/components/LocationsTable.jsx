@@ -1,7 +1,7 @@
 import React from "react";
 
 const maskCoordinate = (value) => {
-  if (typeof value !== "number") {
+  if (!Number.isFinite(value)) {
     return "-";
   }
   return value.toFixed(3);
@@ -29,7 +29,7 @@ export default function LocationsTable({ locations }) {
             </tr>
           ) : (
             safeLocations.map((row, index) => (
-              <tr key={`${row?.user_id ?? "u"}-${row?.timestamp || index}`}>
+              <tr key={`${row?.user_id ?? "u"}-${row?.timestamp || index}-${index}`}>
                 <td>{row?.user_id ?? "-"}</td>
                 <td>{maskCoordinate(row?.latitude)}</td>
                 <td>{maskCoordinate(row?.longitude)}</td>

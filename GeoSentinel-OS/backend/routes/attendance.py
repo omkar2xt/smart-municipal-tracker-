@@ -72,6 +72,10 @@ def mark_attendance(
             # Get time difference
             prev_ts = prev_attendance.timestamp
             if prev_ts.tzinfo is None:
+                logger.warning(
+                    f"Naive timestamp detected for attendance {prev_attendance.id}: {prev_ts}. "
+                    "Assuming UTC timezone for legacy data."
+                )
                 prev_ts = prev_ts.replace(tzinfo=timezone.utc)
             time_delta = (datetime.now(timezone.utc) - prev_ts).total_seconds()
             
@@ -103,9 +107,14 @@ def mark_attendance(
         )
     
     # Geofence validation
-    geofence_validated = True
     geofence_id = _taluka_geofence_id(current_user.taluka)
-    if geofence_id and geofence_id in geofence_service.geofences:
+    if geofence_id is None or geofence_id not in geofence_service.geofences:
+        logger.warning(
+            f"Geofence validation skipped for user {current_user.id} in taluka {current_user.taluka}: "
+            f"geofence_id={geofence_id}"
+        )
+        geofence_validated = False
+    else:
         geofence_validated = geofence_service.is_inside(
             geofence_id,
             payload.latitude,

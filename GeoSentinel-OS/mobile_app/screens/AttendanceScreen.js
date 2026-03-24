@@ -65,7 +65,14 @@ export default function AttendanceScreen() {
           if (!settled) {
             settled = true;
             subscription.remove();
-            resolve({ accelerometer_x: 0, accelerometer_y: 0, accelerometer_z: 0, magnitude: 0 });
+            // Timeout fallback: use realistic gravity (9.8 m/s²) and mark as timeout
+            resolve({
+              accelerometer_x: 0,
+              accelerometer_y: 0,
+              accelerometer_z: 9.8,
+              magnitude: 9.8,
+              sensorTimedOut: true,
+            });
           }
         }, 2000);
 
