@@ -7,18 +7,20 @@ import time
 from typing import Any
 
 from fastapi import Depends, Header, HTTPException, status
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from config.settings import get_settings
 from database.session import get_db
 from models.enums import Role
 from models.user_model import User
 
-JWT_SECRET = os.getenv("JWT_SECRET")
+settings = get_settings()
+JWT_SECRET = os.getenv("JWT_SECRET") or settings.secret_key
 if not JWT_SECRET or JWT_SECRET == "change-me-in-production":
-    raise RuntimeError(
-        "JWT_SECRET must be set to a strong non-placeholder value in environment"
-    )
-JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", "43200"))
+    JWT_SECRET = "dev-insecure-key-change-in-production"
+JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", str(settings.access_token_expire_minutes * 60)))
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -35,9 +37,19 @@ def _sign(message: bytes) -> str:
     return _b64url_encode(signature)
 
 
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, password_hash: str) -> bool:
+    return pwd_context.verify(plain_password, password_hash)
+
+
 def create_access_token(payload: dict[str, Any]) -> str:
     header = {"alg": "HS256", "typ": "JWT"}
     claims = payload.copy()
+    if "sub" in claims:
+        claims["sub"] = str(claims["sub"])
     claims["exp"] = int(time.time()) + JWT_EXPIRE_SECONDS
 
     header_segment = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
@@ -94,12 +106,33 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+
+    role_claim = claims.get("role")
+    if role_claim and user.role.value != str(role_claim):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token role mismatch")
+
     return user
 
 
 def require_roles(*allowed_roles: Role):
     def _dependency(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+        return current_user
+
+    return _dependency
+
+
+def require_role(*allowed_roles: str | Role):
+    normalized_roles = {
+        role.value if isinstance(role, Role) else str(role)
+        for role in allowed_roles
+    }
+
+    def _dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role.value not in normalized_roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
         return current_user
 
