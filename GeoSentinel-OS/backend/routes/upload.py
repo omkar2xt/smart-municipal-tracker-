@@ -15,6 +15,11 @@ router = APIRouter()
 UPLOADS_DIR = Path("uploads")
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def resolve_image_proof_path(stored_path: str) -> Path:
+    """Reconstruct an absolute proof path from a stored relative path."""
+    return (UPLOADS_DIR / stored_path).resolve(strict=False)
+
 @router.post("/upload", response_model=UploadResponse)
 def upload_task_proof(
     payload: UploadCreate,
@@ -41,7 +46,8 @@ def upload_task_proof(
     if not candidate.exists() or not candidate.is_file():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File path does not exist")
 
-    task.image_proof = str(candidate)
+    relative_proof_path = os.path.relpath(candidate, uploads_root)
+    task.image_proof = relative_proof_path
     db.add(task)
     db.commit()
 
