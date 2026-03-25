@@ -194,8 +194,22 @@ export default function SubAdminPanel() {
   }
 
   async function onReassign(task) {
-    const sameTalukaWorkers = workers.filter((worker) => worker.taluka === task.taluka && worker.id !== task.assigned_to);
-    const target = sameTalukaWorkers[0] || workers.find((worker) => worker.id !== task.assigned_to);
+    const normalizeTaluka = (value) => String(value || "").trim().toLowerCase();
+    const currentAssigneeId = Number(task.assigned_to);
+    const workerPool = workers.filter((worker) => Number(worker.id) !== currentAssigneeId);
+    const activeWorkerPool = workerPool.filter((worker) => String(worker.status || "").toLowerCase() === "active");
+    const sortByAssignedTasks = (a, b) => Number(a.assigned_tasks || 0) - Number(b.assigned_tasks || 0);
+
+    const sameTalukaActive = activeWorkerPool
+      .filter((worker) => normalizeTaluka(worker.taluka) === normalizeTaluka(task.taluka))
+      .sort(sortByAssignedTasks);
+    const sameTalukaAny = workerPool
+      .filter((worker) => normalizeTaluka(worker.taluka) === normalizeTaluka(task.taluka))
+      .sort(sortByAssignedTasks);
+    const anyActive = [...activeWorkerPool].sort(sortByAssignedTasks);
+    const anyWorker = [...workerPool].sort(sortByAssignedTasks);
+
+    const target = sameTalukaActive[0] || sameTalukaAny[0] || anyActive[0] || anyWorker[0];
     if (!target) {
       setError("No alternate worker available for reassignment");
       return;
@@ -238,11 +252,27 @@ export default function SubAdminPanel() {
 
   const completionValues = talukas.map((row) => Number(row.task_completion_rate || 0));
   const attendancePoints = (stats.attendance_trend || []).map((row) => Number(row.count || 0));
-  const mapMarkers = talukas.map((row, index) => ({
-    ...row,
-    latitude: 19.0 + index * 0.05,
-    longitude: 73.7 + index * 0.05,
-  }));
+  const mapMarkers = talukas
+    .map((row) => {
+      const latitude = Number(row.latest_latitude);
+      const longitude = Number(row.latest_longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null;
+      }
+
+      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+        return null;
+      }
+
+      return {
+        ...row,
+        latitude,
+        longitude,
+      };
+    })
+    .filter(Boolean);
+  const mapCenter = mapMarkers.length ? [mapMarkers[0].latitude, mapMarkers[0].longitude] : [19.1, 73.8];
 
   return (
     <div className="space-y-4">
@@ -317,26 +347,33 @@ export default function SubAdminPanel() {
 
         <div className="glass-card p-4">
           <p className="text-lg font-bold text-civic-900">District Taluka Map</p>
-          <MapContainer center={[19.1, 73.8]} zoom={10} className="mt-3 h-64 w-full rounded-xl">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {mapMarkers.map((row) => (
-              <Marker
-                key={row.taluka}
-                position={[row.latitude, row.longitude]}
-                icon={row.status === "Needs Attention" ? warningIcon : goodIcon}
-              >
-                <Popup>
-                  <strong>{row.taluka}</strong>
-                  <br />Workers: {row.workers_count}
-                  <br />Completion: {row.task_completion_rate}%
-                  <br />Attendance: {row.attendance_rate}%
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
+          {mapMarkers.length ? (
+            <MapContainer center={mapCenter} zoom={10} className="mt-3 h-64 w-full rounded-xl">
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {mapMarkers.map((row) => (
+                <Marker
+                  key={row.taluka}
+                  position={[row.latitude, row.longitude]}
+                  icon={row.status === "Needs Attention" ? warningIcon : goodIcon}
+                >
+                  <Popup>
+                    <strong>{row.taluka}</strong>
+                    <br />Workers: {row.workers_count}
+                    <br />Completion: {row.task_completion_rate}%
+                    <br />Attendance: {row.attendance_rate}%
+                    <br />Lat/Lng: {row.latitude.toFixed(5)}, {row.longitude.toFixed(5)}
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
+          ) : (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Taluka map is unavailable because recent worker coordinates are missing.
+            </div>
+          )}
         </div>
       </div>
 
