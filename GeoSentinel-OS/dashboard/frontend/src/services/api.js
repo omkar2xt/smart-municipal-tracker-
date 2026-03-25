@@ -1,8 +1,15 @@
 import axios from "axios";
 
 const API_URL_CACHE_KEY = "geosentinel_api_base_url";
+const DEFAULT_PROD_API_URL = "https://backend-delta-seven-36.vercel.app";
 
-const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").trim();
+const isBrowser = typeof window !== "undefined";
+const isHttpsOrigin = isBrowser && window.location.protocol === "https:";
+const isLocalOrigin =
+  isBrowser &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || (isHttpsOrigin ? DEFAULT_PROD_API_URL : "")).trim();
 const configuredBaseUrls = String(import.meta.env.VITE_API_BASE_URLS || "")
   .split(",")
   .map((v) => v.trim())
@@ -38,10 +45,14 @@ const API_BASE_URLS = [...new Set([
   ...(cachedBaseUrl ? [cachedBaseUrl] : []),
   ...(configuredBaseUrl ? [configuredBaseUrl] : []),
   ...configuredBaseUrls,
-  "http://127.0.0.1:8010",
-  "http://localhost:8010",
-  "http://localhost:8000",
-  "http://127.0.0.1:8000",
+  ...(isLocalOrigin
+    ? [
+        "http://127.0.0.1:8010",
+        "http://localhost:8010",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+      ]
+    : []),
 ])];
 
 const api = axios.create({

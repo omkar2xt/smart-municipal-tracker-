@@ -5,7 +5,6 @@ GeoSentinel OS is a role-based municipal operations platform for workforce atten
 ## Live URLs
 
 - Frontend: https://frontend-mu-green-25.vercel.app
-- Frontend backup: https://frontend-ogqr9c9lc-omkar2xts-projects.vercel.app
 - Backend API: https://backend-delta-seven-36.vercel.app
 
 ## What It Solves
