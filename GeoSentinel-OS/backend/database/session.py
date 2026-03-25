@@ -12,16 +12,19 @@ from config.settings import get_settings
 settings = get_settings()
 
 # Database URL from environment or default
-DATABASE_URL = os.getenv("DATABASE_URL", settings.database_url)
+DATABASE_URL = os.getenv("DATABASE_URL") or settings.database_url
 
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
-if DATABASE_URL.startswith("postgresql+psycopg2://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+    elif DATABASE_URL.startswith("postgresql+psycopg2://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
+else:
+    raise RuntimeError("DATABASE_URL is required")
 
 # Connection arguments
 connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
+if DATABASE_URL and DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
 # Create engine with connection pooling

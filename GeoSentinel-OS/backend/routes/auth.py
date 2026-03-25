@@ -10,7 +10,7 @@ from database.session import get_db
 from models.user_model import User
 from schemas.user_schema import CurrentUserResponse, LoginRequest, LoginResponse
 from services.audit_service import write_audit_log
-from utils.security import create_access_token, get_current_user, hash_identifier, verify_password
+from utils.security import create_access_token, get_current_user, hash_identifier, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,7 +49,8 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not verify_password(credentials.password, user.password_hash, user=user, db=db):
+    verification = verify_password(credentials.password, user.password_hash, user=user, db=db)
+    if not verification.valid:
         write_audit_log(
             db,
             action="auth.login",
@@ -66,6 +67,28 @@ def login(
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if verification.needs_migration:
+        user.password_hash = hash_password(credentials.password)
+        try:
+            db.flush()
+        except Exception as exc:
+            db.rollback()
+            write_audit_log(
+                db,
+                action="auth.password_migration",
+                status="failure",
+                user_id=user.id,
+                details=(
+                    f"timestamp={datetime.now(timezone.utc).isoformat()} "
+                    f"username_hash={username_hash} reason=migration_flush_failed"
+                ),
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to complete login migration",
+            ) from exc
 
     if not user.is_active:
         write_audit_log(

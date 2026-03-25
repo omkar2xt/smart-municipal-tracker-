@@ -1,8 +1,10 @@
 """JWT and password security helpers for GeoSentinel OS."""
 
 import hashlib
+import hmac
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -25,6 +27,16 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+_AUDIT_HASH_SECRET = os.getenv("AUDIT_HASH_SECRET")
+if not _AUDIT_HASH_SECRET:
+    raise RuntimeError("AUDIT_HASH_SECRET environment variable is required")
+_AUDIT_HASH_SECRET_BYTES = _AUDIT_HASH_SECRET.encode("utf-8")
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    valid: bool
+    needs_migration: bool = False
 
 
 def _jwt_secret() -> str:
@@ -46,28 +58,30 @@ def hash_password(password: str) -> str:
 
 def hash_identifier(value: str) -> str:
     """Hash an identifier for audit logging without storing raw PII."""
-    return hashlib.sha256((value or "").strip().lower().encode("utf-8")).hexdigest()
+    normalized = (value or "").strip().lower()
+    return hmac.new(
+        _AUDIT_HASH_SECRET_BYTES,
+        normalized.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
-def verify_password(plain: str, hashed: str, user: User | None = None, db: Session | None = None) -> bool:
-    """Verify password with dual compatibility and migrate legacy hashes when possible."""
+def verify_password(plain: str, hashed: str, user: User | None = None, db: Session | None = None) -> VerificationResult:
+    """Verify password with dual compatibility and signal legacy migration requirement."""
     prehashed = hashlib.sha256(plain.encode("utf-8")).hexdigest()
     try:
         if pwd_context.verify(prehashed, hashed):
-            return True
+            return VerificationResult(valid=True, needs_migration=False)
     except ValueError:
         pass
 
     try:
         if pwd_context.verify(plain, hashed):
-            if user is not None and db is not None:
-                user.password_hash = hash_password(plain)
-                db.flush()
-            return True
+            return VerificationResult(valid=True, needs_migration=True)
     except ValueError:
-        return False
+        return VerificationResult(valid=False, needs_migration=False)
 
-    return False
+    return VerificationResult(valid=False, needs_migration=False)
 
 
 def create_access_token(data: dict[str, Any]) -> str:

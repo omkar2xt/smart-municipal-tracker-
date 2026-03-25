@@ -11,21 +11,23 @@ from models.report_model import Report
 logger = logging.getLogger(__name__)
 
 
-def cleanup_old_tracking_data(days: int = 60) -> None:
+def cleanup_old_tracking_data(days: int = 60) -> bool:
     """Delete tracking rows older than configured retention window."""
     db = SessionLocal()
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         db.query(LocationLog).filter(LocationLog.timestamp < cutoff).delete(synchronize_session=False)
         db.commit()
+        return True
     except Exception:
         db.rollback()
         logger.exception("Failed to cleanup old tracking data")
+        return False
     finally:
         db.close()
 
 
-def register_generated_report(report_type: str, generated_by: int | None, scope: str | None = None) -> None:
+def register_generated_report(report_type: str, generated_by: int | None, scope: str | None = None) -> bool:
     """Persist metadata for generated report files."""
     db = SessionLocal()
     try:
@@ -37,9 +39,11 @@ def register_generated_report(report_type: str, generated_by: int | None, scope:
         )
         db.add(report)
         db.commit()
+        return True
     except Exception:
         db.rollback()
         logger.exception("Failed to register generated report")
+        return False
     finally:
         db.close()
 

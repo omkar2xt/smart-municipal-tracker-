@@ -1,6 +1,7 @@
 """Location tracking routes for continuous GPS and sensor data."""
 
 import math
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from models.enums import Role
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
 spoof_service = SpoofDetectionService()
+logger = logging.getLogger(__name__)
 LOW_MOVEMENT_THRESHOLD = 0.12
 GPS_JUMP_WITHOUT_MOVEMENT_METERS = 15.0
 IMPOSSIBLE_SPEED_DISTANCE_METERS = 1000.0
@@ -24,6 +26,12 @@ IMPOSSIBLE_SPEED_WINDOW_SECONDS = 60.0
 STATIC_DEVICE_CHANGE_METERS = 20.0
 STATIC_DEVICE_WINDOW_SECONDS = 180.0
 SPEED_MIN_TIME_DELTA_SECONDS = 0.1
+
+
+def _run_tracking_cleanup(days: int = 60) -> None:
+    """Run cleanup in background and surface failures in logs."""
+    if not cleanup_old_tracking_data(days):
+        logger.warning("Tracking cleanup task reported failure")
 
 
 def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -94,7 +102,7 @@ def log_location(
         elif payload.accelerometer_magnitude is not None:
             effective_magnitude = payload.accelerometer_magnitude
         else:
-            effective_magnitude = 0.0
+            effective_magnitude = None
 
         distance_m = haversine_meters(
             prev_location_record.latitude,
@@ -105,7 +113,11 @@ def log_location(
         speed_mps = distance_m / max(time_delta, SPEED_MIN_TIME_DELTA_SECONDS)
 
         # Required rule: GPS changed while movement is low.
-        if distance_m > GPS_JUMP_WITHOUT_MOVEMENT_METERS and effective_magnitude < LOW_MOVEMENT_THRESHOLD:
+        if (
+            effective_magnitude is not None
+            and distance_m > GPS_JUMP_WITHOUT_MOVEMENT_METERS
+            and effective_magnitude < LOW_MOVEMENT_THRESHOLD
+        ):
             spoof_flag = True
             spoof_reasons.append("GPS changed without movement")
 
@@ -117,6 +129,7 @@ def log_location(
         # Required rule: static device for long period while location still changes.
         if (
             time_delta >= STATIC_DEVICE_WINDOW_SECONDS
+            and effective_magnitude is not None
             and effective_magnitude < LOW_MOVEMENT_THRESHOLD
             and distance_m > STATIC_DEVICE_CHANGE_METERS
         ):
@@ -172,7 +185,7 @@ def log_location(
     db.commit()
     db.refresh(record)
 
-    background_tasks.add_task(cleanup_old_tracking_data, 60)
+    background_tasks.add_task(_run_tracking_cleanup, 60)
     background_tasks.add_task(
         log_activity,
         action="tracking.location.ingested",
