@@ -10,9 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import get_settings
 from database.base import Base
 from database.session import engine
-from database.init_db import seed_default_users
+from database.init_db import ensure_runtime_schema_columns, seed_default_users
 import models  # Ensure all SQLAlchemy models are imported for metadata creation.
-from routes import admin_new, attendance, auth, reports_new, sync, task_compat, tasks, tracking_new, upload, users_new
+from routes import admin_new, attendance, auth, reports_new, subadmin, sync, taluka_admin, task_compat, tasks, tracking_new, upload, users_new, worker_verification
 from services.spoof_detection import assert_spoof_detection_enabled_for_production
 
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +53,9 @@ app.include_router(sync.router)
 app.include_router(users_new.router)
 app.include_router(admin_new.router)
 app.include_router(reports_new.router)
+app.include_router(worker_verification.router)
+app.include_router(taluka_admin.router)
+app.include_router(subadmin.router)
 
 
 @app.middleware("http")
@@ -76,6 +79,7 @@ def startup() -> None:
     try:
         assert_spoof_detection_enabled_for_production()
         Base.metadata.create_all(bind=engine)
+        ensure_runtime_schema_columns()
         seed_default_users()
         logger.info("GeoSentinel OS backend initialized")
     except Exception as exc:

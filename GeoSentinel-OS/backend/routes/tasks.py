@@ -63,6 +63,8 @@ def create_task(
     return TaskResponse(
         id=task.id, title=task.title, description=task.description, fund_allocated=float(task.fund_allocated), status=task.status,
         assigned_to=task.assigned_to, assigned_by=task.assigned_by,
+        before_image=task.before_image or task.before_image_path,
+        after_image=task.after_image or task.after_image_path,
         before_image_path=task.before_image_path, after_image_path=task.after_image_path,
         expected_latitude=task.expected_latitude, expected_longitude=task.expected_longitude,
         geofence_id=task.geofence_id, due_date=task.due_date,
@@ -109,6 +111,8 @@ def get_tasks(
         TaskResponse(
             id=t.id, title=t.title, description=t.description, fund_allocated=float(t.fund_allocated), status=t.status,
             assigned_to=t.assigned_to, assigned_by=t.assigned_by,
+            before_image=t.before_image or t.before_image_path,
+            after_image=t.after_image or t.after_image_path,
             before_image_path=t.before_image_path, after_image_path=t.after_image_path,
             expected_latitude=t.expected_latitude, expected_longitude=t.expected_longitude,
             geofence_id=t.geofence_id, due_date=t.due_date,
@@ -136,8 +140,10 @@ def complete_task(
     task.status = TaskStatus.COMPLETED
     task.completed_at = datetime.now(timezone.utc)
     if payload.before_image_path:
+        task.before_image = payload.before_image_path
         task.before_image_path = payload.before_image_path
     if payload.after_image_path:
+        task.after_image = payload.after_image_path
         task.after_image_path = payload.after_image_path
     
     write_audit_log(db, action="task.complete", status="success", user_id=current_user.id,
@@ -154,6 +160,8 @@ def complete_task(
     return TaskResponse(
         id=task.id, title=task.title, description=task.description, fund_allocated=float(task.fund_allocated), status=task.status,
         assigned_to=task.assigned_to, assigned_by=task.assigned_by,
+        before_image=task.before_image or task.before_image_path,
+        after_image=task.after_image or task.after_image_path,
         before_image_path=task.before_image_path, after_image_path=task.after_image_path,
         expected_latitude=task.expected_latitude, expected_longitude=task.expected_longitude,
         geofence_id=task.geofence_id, due_date=task.due_date,

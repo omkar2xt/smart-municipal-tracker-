@@ -22,6 +22,8 @@ class Task(Base):
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), nullable=False, default=TaskStatus.PENDING, index=True)
     assigned_to: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     assigned_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    before_image: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    after_image: Mapped[str | None] = mapped_column(String(300), nullable=True)
     before_image_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
     after_image_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
     expected_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)

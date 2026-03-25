@@ -3,8 +3,12 @@ import { motion } from "framer-motion";
 import { CheckCircle2, ClipboardList, MapPinned, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import AdminStatePanel from "../components/AdminStatePanel";
 import StatusBadge from "../components/ui/StatusBadge";
+import SubAdminPanel from "../components/SubAdminPanel";
 import StatCard from "../components/ui/StatCard";
+import TalukaAdminPanel from "../components/TalukaAdminPanel";
+import WorkerVerificationPanel from "../components/WorkerVerificationPanel";
 import { useAuth } from "../context/AuthContext";
 import { downloadReport, fetchStats, fetchTasks, fetchWorkers } from "../services/api";
 
@@ -44,6 +48,9 @@ function ComparisonChart() {
 function AdminPanels({
   role,
   stats,
+  session,
+  tasks,
+  onRefreshTasks,
   onDownloadAttendance,
   onDownloadTasks,
   onDownloadPerformance,
@@ -53,90 +60,23 @@ function AdminPanels({
   onUploadProof,
 }) {
   if (role === "admin") {
-    return (
-      <>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard title="Total Workers" value={String(stats.total_users ?? 0)} subtitle="Across state operations" icon={<Users size={18} />} />
-          <StatCard title="Total Tasks" value={String(stats.total_tasks ?? 0)} subtitle="Activity records" icon={<ClipboardList size={18} />} />
-          <StatCard title="Spoof Detections" value={String(stats.spoof_detections ?? 0)} subtitle="Risk alerts" icon={<CheckCircle2 size={18} />} />
-          <StatCard title="Location Logs" value={String(stats.total_location_logs ?? 0)} subtitle="Tracking records" icon={<MapPinned size={18} />} />
-        </div>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <ComparisonChart />
-          <div className="glass-card p-5">
-            <h3 className="text-lg font-bold text-civic-900">State Heat Summary</h3>
-            <p className="mt-2 text-sm text-slate-600">High-intensity work clusters in Pune, Nashik, and Nagpur divisions.</p>
-            <div className="mt-4 h-52 rounded-xl bg-gradient-to-br from-civic-100 via-eco-100 to-civic-200" />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" onClick={onDownloadAttendance} className="rounded-lg bg-civic-600 px-3 py-2 text-sm font-semibold text-white">Download Attendance CSV</button>
-              <button type="button" onClick={onDownloadPerformance} className="rounded-lg border border-civic-300 px-3 py-2 text-sm font-semibold text-civic-700">Download Performance PDF</button>
-            </div>
-          </div>
-        </div>
-      </>
-    );
+    return <AdminStatePanel />;
   }
 
   if (role === "sub_admin") {
-    return (
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="glass-card p-5">
-          <h3 className="text-lg font-bold text-civic-900">District Analytics</h3>
-          <ul className="mt-3 space-y-2 text-sm text-slate-600">
-            <li>Attendance compliance: 91%</li>
-            <li>Active workers: 328</li>
-            <li>Open tasks: 74</li>
-          </ul>
-        </div>
-        <div className="glass-card p-5">
-          <h3 className="text-lg font-bold text-civic-900">Taluka Decisions Queue</h3>
-          <ul className="mt-3 space-y-2 text-sm text-slate-600">
-            <li>Approve budget shift: Hadapsar sanitation sprint</li>
-            <li>Review urgent request: Khed waste transfer issue</li>
-            <li>Sign off: weekly impact report exports</li>
-          </ul>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" onClick={onDownloadTasks} className="rounded-lg bg-civic-600 px-3 py-2 text-sm font-semibold text-white">Download Task CSV</button>
-            <button type="button" onClick={onDownloadPerformance} className="rounded-lg border border-civic-300 px-3 py-2 text-sm font-semibold text-civic-700">Download PDF</button>
-          </div>
-        </div>
-      </div>
-    );
+    return <SubAdminPanel />;
   }
 
   if (role === "taluka_admin") {
-    return (
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="glass-card p-5">
-          <h3 className="text-lg font-bold text-civic-900">Worker Assignment Board</h3>
-          <p className="mt-2 text-sm text-slate-600">Assign daily tasks and monitor movement in your taluka.</p>
-          <button type="button" onClick={onAssignTask} className="mt-4 rounded-xl bg-eco-600 px-4 py-2 text-sm font-semibold text-white hover:bg-eco-700">
-            Assign New Task
-          </button>
-        </div>
-        <div className="glass-card p-5">
-          <h3 className="text-lg font-bold text-civic-900">Taluka Movement Snapshot</h3>
-          <div className="mt-3 h-48 rounded-xl bg-gradient-to-br from-eco-100 to-civic-100" />
-        </div>
-      </div>
-    );
+    return <TalukaAdminPanel />;
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      <button type="button" onClick={onOpenMap} className="glass-card p-5 text-left hover:border-eco-300">
-        <p className="text-lg font-semibold text-civic-900">Mark Attendance</p>
-        <p className="mt-1 text-sm text-slate-600">Submit GPS attendance for today.</p>
-      </button>
-      <button type="button" onClick={onViewTasks} className="glass-card p-5 text-left hover:border-eco-300">
-        <p className="text-lg font-semibold text-civic-900">View Tasks</p>
-        <p className="mt-1 text-sm text-slate-600">Open assigned tasks and completion details.</p>
-      </button>
-      <button type="button" onClick={onUploadProof} className="glass-card p-5 text-left hover:border-eco-300">
-        <p className="text-lg font-semibold text-civic-900">Upload Proof</p>
-        <p className="mt-1 text-sm text-slate-600">Attach before/after evidence for field work.</p>
-      </button>
-    </div>
+    <WorkerVerificationPanel
+      userId={session?.id}
+      tasks={tasks}
+      onTasksRefresh={onRefreshTasks}
+    />
   );
 }
 
@@ -155,16 +95,24 @@ export default function DashboardPage() {
       setLoading(true);
       setError("");
       try {
-        const [workersData, tasksData, statsData] = await Promise.all([
+        const [workersResult, tasksResult, statsResult] = await Promise.allSettled([
           fetchWorkers(),
           fetchTasks(),
           fetchStats(),
         ]);
 
         if (!mounted) return;
+        const workersData = workersResult.status === "fulfilled" ? workersResult.value : [];
+        const tasksData = tasksResult.status === "fulfilled" ? tasksResult.value : [];
+        const statsData = statsResult.status === "fulfilled" ? statsResult.value : {};
+
         setWorkers(Array.isArray(workersData) ? workersData : []);
         setTasks(Array.isArray(tasksData) ? tasksData : []);
         setStats(statsData || {});
+
+        if (workersResult.status === "rejected" || tasksResult.status === "rejected" || statsResult.status === "rejected") {
+          setError("Some dashboard data could not be loaded. Showing available data.");
+        }
       } catch (err) {
         if (!mounted) return;
         setError(err?.message || "Failed to load dashboard data");
@@ -225,6 +173,17 @@ export default function DashboardPage() {
     navigate("/map");
   }
 
+  async function refreshTasks() {
+    try {
+      const latestTasks = await fetchTasks();
+      setTasks(Array.isArray(latestTasks) ? latestTasks : []);
+    } catch {
+      // Keep currently loaded tasks if refresh fails.
+    }
+  }
+
+  const showDefaultTables = session?.role !== "taluka_admin" && session?.role !== "sub_admin" && session?.role !== "admin";
+
   return (
     <div>
       <div className="mb-5">
@@ -239,6 +198,9 @@ export default function DashboardPage() {
       <AdminPanels
         role={session?.role}
         stats={stats}
+        session={session}
+        tasks={tasks}
+        onRefreshTasks={refreshTasks}
         onDownloadAttendance={onDownloadAttendance}
         onDownloadTasks={onDownloadTasks}
         onDownloadPerformance={onDownloadPerformance}
@@ -248,6 +210,7 @@ export default function DashboardPage() {
         onUploadProof={onUploadProof}
       />
 
+      {showDefaultTables ? (
       <div id="task-monitoring-section" className="mt-5 grid gap-4 lg:grid-cols-2">
         <div className="glass-card overflow-hidden p-4">
           <h3 className="mb-3 text-lg font-bold text-civic-900">Task Monitoring</h3>
@@ -301,6 +264,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      ) : null}
 
       <div className="h-20 lg:hidden" />
     </div>

@@ -7,6 +7,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from sqlalchemy import inspect, text
+
 from database.base import Base
 from database.session import engine, SessionLocal
 from models.user_model import User
@@ -19,9 +21,29 @@ from utils.security import hash_password
 logger = logging.getLogger(__name__)
 
 
+def ensure_runtime_schema_columns() -> None:
+    """Add newly required columns for worker verification/proof on existing databases."""
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        if inspector.has_table("tasks"):
+            task_columns = {col["name"] for col in inspector.get_columns("tasks")}
+            if "before_image" not in task_columns:
+                connection.execute(text("ALTER TABLE tasks ADD COLUMN before_image VARCHAR(300)"))
+            if "after_image" not in task_columns:
+                connection.execute(text("ALTER TABLE tasks ADD COLUMN after_image VARCHAR(300)"))
+
+        if inspector.has_table("users"):
+            user_columns = {col["name"] for col in inspector.get_columns("users")}
+            if "face_image" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN face_image VARCHAR(400)"))
+            if "face_image_hash" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN face_image_hash VARCHAR(64)"))
+
+
 def init_db() -> None:
     """Create all database tables"""
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema_columns()
     print("✓ Database tables created successfully")
 
 

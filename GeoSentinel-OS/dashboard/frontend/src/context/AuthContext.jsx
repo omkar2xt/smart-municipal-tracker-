@@ -89,16 +89,18 @@ export function AuthProvider({ children }) {
     setAuthToken(token);
 
     let currentUser = null;
-    try {
-      currentUser = await fetchCurrentUser();
-    } catch {
-      currentUser = null;
+    if (!data?.user_id || !data?.email) {
+      try {
+        currentUser = await fetchCurrentUser();
+      } catch {
+        currentUser = null;
+      }
     }
 
     const nextSession = {
-      id: currentUser?.user_id ?? null,
-      email: currentUser?.email || email,
-      name: nameFromEmail(currentUser?.email || email),
+      id: data?.user_id ?? currentUser?.user_id ?? null,
+      email: data?.email || currentUser?.email || email,
+      name: nameFromEmail(data?.email || currentUser?.email || email),
       role,
       tier: toTier(role),
       loggedAt: new Date().toISOString(),

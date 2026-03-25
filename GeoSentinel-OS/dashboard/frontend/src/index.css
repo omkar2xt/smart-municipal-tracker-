@@ -39,3 +39,14 @@
     repeating-linear-gradient(90deg, rgba(15, 23, 42, 0.04) 0, rgba(15, 23, 42, 0.04) 1px, transparent 1px, transparent 40px),
     repeating-linear-gradient(0deg, rgba(15, 23, 42, 0.04) 0, rgba(15, 23, 42, 0.04) 1px, transparent 1px, transparent 40px);
 }
+
+/* Keep Leaflet visible and interactive inside responsive layouts. */
+.leaflet-container {
+  min-height: 320px;
+  z-index: 10;
+}
+
+.leaflet-pane,
+.leaflet-control {
+  z-index: 20;
+}

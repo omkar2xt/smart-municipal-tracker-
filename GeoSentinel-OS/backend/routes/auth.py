@@ -108,6 +108,7 @@ def login(
         )
 
     token = create_access_token({
+        "sub": str(user.id),
         "user_id": user.id,
         "role": user.role.value
     })
@@ -115,6 +116,8 @@ def login(
     return LoginResponse(
         access_token=token,
         token_type="bearer",
+        user_id=user.id,
+        email=user.email,
         role=user.role.value,
     )
 

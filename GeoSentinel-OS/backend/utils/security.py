@@ -19,8 +19,22 @@ from models.user_model import User
 
 logger = logging.getLogger(__name__)
 
-# bcrypt password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def _bcrypt_rounds() -> int:
+    """Read bcrypt rounds from environment and keep sane bounds."""
+    raw_value = (os.getenv("BCRYPT_ROUNDS") or "9").strip()
+    try:
+        rounds = int(raw_value)
+    except ValueError:
+        rounds = 10
+    return max(8, min(14, rounds))
+
+
+# bcrypt password hashing (configurable; default tuned for faster interactive logins)
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=_bcrypt_rounds(),
+)
 
 # OAuth2 bearer token extraction from Authorization: Bearer <token>
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -71,7 +85,10 @@ def verify_password(plain: str, hashed: str, user: User | None = None, db: Sessi
     prehashed = hashlib.sha256(plain.encode("utf-8")).hexdigest()
     try:
         if pwd_context.verify(prehashed, hashed):
-            return VerificationResult(valid=True, needs_migration=False)
+            return VerificationResult(
+                valid=True,
+                needs_migration=bool(pwd_context.needs_update(hashed)),
+            )
     except ValueError:
         pass
 

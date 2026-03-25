@@ -98,6 +98,8 @@ CATEGORY_MAP: Dict[str, str] = {
     ".apk": "Programs",
 }
 
+CATEGORY_NAMES = set(CATEGORY_MAP.values()) | {"Others"}
+
 
 def timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -188,7 +190,7 @@ def arrange_files(
 
     for file_path in iter_files(source, recursive=recursive, skip_dirs=skip_dirs):
         # Skip files already inside a managed category folder.
-        if file_path.parent.name in set(CATEGORY_MAP.values()) | {"Others"}:
+        if file_path.parent.name in CATEGORY_NAMES:
             skipped += 1
             continue
 

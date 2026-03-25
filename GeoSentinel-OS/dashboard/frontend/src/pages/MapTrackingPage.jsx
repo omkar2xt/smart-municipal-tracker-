@@ -12,7 +12,26 @@ L.Icon.Default.mergeOptions({
 
 function UpdateMap({ position }) {
   const map = useMap();
-  map.setView(position, 17);
+  useEffect(() => {
+    // Fix partial/blank tiles when container size changes after initial mount.
+    const raf = requestAnimationFrame(() => {
+      map.invalidateSize();
+      map.setView(position, map.getZoom() || 17);
+    });
+
+    const onResize = () => map.invalidateSize();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    map.setView(position, 17);
+  }, [map, position]);
+
   return null;
 }
 
@@ -24,6 +43,15 @@ function headingIcon(direction) {
     iconSize: [30, 30],
     iconAnchor: [15, 15],
   });
+}
+
+function headingLabel(alpha) {
+  if (!Number.isFinite(alpha)) return "Unknown";
+  const normalized = ((alpha % 360) + 360) % 360;
+  if (normalized >= 315 || normalized < 45) return "North";
+  if (normalized >= 45 && normalized < 135) return "East";
+  if (normalized >= 135 && normalized < 225) return "South";
+  return "West";
 }
 
 function distanceMeters(a, b) {
@@ -44,20 +72,49 @@ function distanceMeters(a, b) {
 
 export default function MapTrackingPage() {
   const [position, setPosition] = useState([19.0, 73.0]);
+  const [targetPosition, setTargetPosition] = useState([19.0, 73.0]);
   const [accuracy, setAccuracy] = useState(null);
+  const [speed, setSpeed] = useState(0);
   const [direction, setDirection] = useState(0);
   const [moving, setMoving] = useState(false);
   const [accelData, setAccelData] = useState({ x: 0, y: 0, z: 0, magnitude: 0 });
   const [sensorEnabled, setSensorEnabled] = useState(false);
   const [sensorStatus, setSensorStatus] = useState("Sensors pending permission");
   const [trackingError, setTrackingError] = useState("");
+  const [platformHint, setPlatformHint] = useState("");
 
   const lastPositionRef = useRef(null);
   const lastTimestampRef = useRef(Date.now());
+  const lastUploadRef = useRef(0);
   const firstGpsRef = useRef(true);
   const directionRef = useRef(0);
   const movingRef = useRef(false);
   const accelRef = useRef({ x: 0, y: 0, z: 0, magnitude: 0 });
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setPlatformHint("Sensors and geolocation require HTTPS or localhost on mobile browsers.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let rafId = 0;
+    const animate = () => {
+      setPosition((current) => {
+        const dx = targetPosition[0] - current[0];
+        const dy = targetPosition[1] - current[1];
+        const closeEnough = Math.abs(dx) < 0.000002 && Math.abs(dy) < 0.000002;
+        if (closeEnough) {
+          return targetPosition;
+        }
+        return [current[0] + dx * 0.25, current[1] + dy * 0.25];
+      });
+      rafId = requestAnimationFrame(animate);
+    };
+
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
+  }, [targetPosition]);
 
   useEffect(() => {
     directionRef.current = direction;
@@ -87,8 +144,9 @@ export default function MapTrackingPage() {
           firstGpsRef.current = false;
           lastPositionRef.current = nextPosition;
           lastTimestampRef.current = now;
-          setPosition(nextPosition);
+          setTargetPosition(nextPosition);
           setAccuracy(pos.coords.accuracy ?? null);
+          setSpeed(Number.isFinite(speed) && speed >= 0 ? speed : 0);
           setTrackingError("");
           return;
         }
@@ -98,36 +156,38 @@ export default function MapTrackingPage() {
         const elapsedSeconds = Math.max((now - lastTimestampRef.current) / 1000, 1);
         const computedSpeed = distance / elapsedSeconds;
         const effectiveSpeed = Number.isFinite(speed) && speed >= 0 ? speed : computedSpeed;
+        const movementDetected = accelRef.current.magnitude >= 0.12;
 
-        const lowMotion = accelRef.current.magnitude < 0.12;
-        const spoofByJump = distance > 15 && lowMotion;
-        const spoofBySpeed = effectiveSpeed > 55;
-        const spoofDetectionFlag = spoofByJump || spoofBySpeed;
-        const spoofReason = spoofByJump
-          ? "GPS changed without accelerometer movement"
-          : (spoofBySpeed ? "Unrealistic speed detected" : "");
+        const spoofDetectionFlag = distance > 8 && !movementDetected;
+        const spoofReason = spoofDetectionFlag ? "GPS changed while accelerometer shows no movement" : "";
 
-        setPosition(nextPosition);
+        setTargetPosition(nextPosition);
         setAccuracy(pos.coords.accuracy ?? null);
+        setSpeed(effectiveSpeed);
         setTrackingError("");
 
         lastPositionRef.current = nextPosition;
         lastTimestampRef.current = now;
 
-        API.post("/tracking/location", {
-          latitude,
-          longitude,
-          accuracy: pos.coords.accuracy ?? null,
-          accelerometer_x: accelRef.current.x,
-          accelerometer_y: accelRef.current.y,
-          accelerometer_z: accelRef.current.z,
-          accelerometer_magnitude: accelRef.current.magnitude,
-          direction: directionRef.current,
-          spoof_detection_flag: spoofDetectionFlag,
-          spoof_reason: spoofReason,
-        }).catch((error) => {
-          console.error("Tracking sync failed", error);
-        });
+        if (now - lastUploadRef.current >= 7000) {
+          lastUploadRef.current = now;
+          API.post("/tracking/location", {
+            latitude,
+            longitude,
+            accuracy: pos.coords.accuracy ?? null,
+            speed: effectiveSpeed,
+            accelerometer_x: accelRef.current.x,
+            accelerometer_y: accelRef.current.y,
+            accelerometer_z: accelRef.current.z,
+            accelerometer_magnitude: accelRef.current.magnitude,
+            direction: directionRef.current,
+            movement: movementDetected,
+            spoof_detection_flag: spoofDetectionFlag,
+            spoof_reason: spoofReason,
+          }).catch((error) => {
+            console.error("Tracking sync failed", error);
+          });
+        }
       },
       (error) => {
         setTrackingError(error?.message || "Unable to access live location.");
@@ -174,6 +234,13 @@ export default function MapTrackingPage() {
 
   async function requestSensorPermissions() {
     try {
+      const motionSupported = typeof window !== "undefined" && "DeviceMotionEvent" in window;
+      const orientationSupported = typeof window !== "undefined" && "DeviceOrientationEvent" in window;
+      if (!motionSupported && !orientationSupported) {
+        setSensorStatus("Sensors unsupported on this device/browser");
+        return;
+      }
+
       if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
         const motionPermission = await DeviceMotionEvent.requestPermission();
         if (motionPermission !== "granted") {
@@ -209,10 +276,11 @@ export default function MapTrackingPage() {
             onClick={requestSensorPermissions}
             className="rounded-lg bg-civic-600 px-4 py-2 text-sm font-semibold text-white"
           >
-            Enable Motion + Orientation
+            Enable Sensors
           </button>
           <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{sensorStatus}</span>
           {trackingError ? <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700">{trackingError}</span> : null}
+          {platformHint ? <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">{platformHint}</span> : null}
         </div>
       </div>
 
@@ -234,7 +302,8 @@ export default function MapTrackingPage() {
             <p>Latitude: <span className="font-semibold">{position[0].toFixed(6)}</span></p>
             <p>Longitude: <span className="font-semibold">{position[1].toFixed(6)}</span></p>
             <p>Accuracy: <span className="font-semibold">{accuracy != null ? `${Math.round(accuracy)} m` : "--"}</span></p>
-            <p>Direction: <span className="font-semibold">{Math.round(direction)} deg</span></p>
+            <p>Speed: <span className="font-semibold">{Number.isFinite(speed) ? speed.toFixed(2) : "0.00"} m/s</span></p>
+            <p>Direction: <span className="font-semibold">{Math.round(direction)} deg ({headingLabel(direction)})</span></p>
             <p>Accel X: <span className="font-semibold">{accelData.x.toFixed(3)}</span></p>
             <p>Accel Y: <span className="font-semibold">{accelData.y.toFixed(3)}</span></p>
             <p>Accel Z: <span className="font-semibold">{accelData.z.toFixed(3)}</span></p>

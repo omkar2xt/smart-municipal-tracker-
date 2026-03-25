@@ -7,6 +7,7 @@ __pycache__/
 .gitignore
 .env
 .env.*
+node_modules/
 uploads/
 tests/
 *.log
