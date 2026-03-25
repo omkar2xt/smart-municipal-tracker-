@@ -47,6 +47,7 @@ function ComparisonChart() {
 
 function AdminPanels({
   role,
+  sessionKey,
   stats,
   session,
   tasks,
@@ -59,20 +60,24 @@ function AdminPanels({
   onViewTasks,
   onUploadProof,
 }) {
-  if (role === "admin") {
-    return <AdminStatePanel />;
+  const isAdminRole = role === "admin" || role === "state_admin";
+  const isSubAdminRole = role === "sub_admin" || role === "district_admin";
+
+  if (isAdminRole) {
+    return <AdminStatePanel key={`admin-${sessionKey}`} />;
   }
 
-  if (role === "sub_admin") {
-    return <SubAdminPanel />;
+  if (isSubAdminRole) {
+    return <SubAdminPanel key={`subadmin-${sessionKey}`} />;
   }
 
   if (role === "taluka_admin") {
-    return <TalukaAdminPanel />;
+    return <TalukaAdminPanel key={`taluka-${sessionKey}`} />;
   }
 
   return (
     <WorkerVerificationPanel
+      key={`worker-${sessionKey}`}
       userId={session?.id}
       tasks={tasks}
       onTasksRefresh={onRefreshTasks}
@@ -90,6 +95,14 @@ export default function DashboardPage() {
   const [stats, setStats] = React.useState({});
 
   React.useEffect(() => {
+    if (!session?.id) {
+      setWorkers([]);
+      setTasks([]);
+      setStats({});
+      setLoading(false);
+      return;
+    }
+
     let mounted = true;
     async function load() {
       setLoading(true);
@@ -124,7 +137,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [session?.id, session?.role]);
 
   async function onDownloadAttendance() {
     try {
@@ -182,7 +195,9 @@ export default function DashboardPage() {
     }
   }
 
-  const showDefaultTables = session?.role !== "taluka_admin" && session?.role !== "sub_admin" && session?.role !== "admin";
+  const isAdminRole = session?.role === "admin" || session?.role === "state_admin";
+  const isSubAdminRole = session?.role === "sub_admin" || session?.role === "district_admin";
+  const showDefaultTables = session?.role !== "taluka_admin" && !isSubAdminRole && !isAdminRole;
 
   return (
     <div>
@@ -197,6 +212,7 @@ export default function DashboardPage() {
 
       <AdminPanels
         role={session?.role}
+        sessionKey={session?.id || session?.email || "anonymous"}
         stats={stats}
         session={session}
         tasks={tasks}

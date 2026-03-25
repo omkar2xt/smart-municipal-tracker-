@@ -303,6 +303,40 @@ def subadmin_talukas(
     ).all() if worker_ids else []
 
     rows = _taluka_summary(workers, tasks, attendance, spoof_cases)
+
+    worker_map = {worker.id: worker for worker in workers}
+    latest_locations_by_worker: dict[int, LocationLog] = {}
+    if worker_ids:
+        latest_locations = (
+            db.query(LocationLog)
+            .filter(LocationLog.user_id.in_(worker_ids))
+            .order_by(LocationLog.timestamp.desc())
+            .all()
+        )
+        for location in latest_locations:
+            if location.user_id not in latest_locations_by_worker:
+                latest_locations_by_worker[location.user_id] = location
+
+    taluka_coordinates: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for worker_id, location in latest_locations_by_worker.items():
+        worker = worker_map.get(worker_id)
+        taluka = (worker.taluka if worker else None) or "Unknown"
+        latitude = float(location.latitude)
+        longitude = float(location.longitude)
+        if -90 <= latitude <= 90 and -180 <= longitude <= 180:
+            taluka_coordinates[taluka].append((latitude, longitude))
+
+    for row in rows:
+        points = taluka_coordinates.get(row["taluka"], [])
+        if points:
+            avg_lat = sum(point[0] for point in points) / len(points)
+            avg_lng = sum(point[1] for point in points) / len(points)
+            row["latest_latitude"] = round(avg_lat, 6)
+            row["latest_longitude"] = round(avg_lng, 6)
+        else:
+            row["latest_latitude"] = None
+            row["latest_longitude"] = None
+
     return {"total": len(rows), "records": rows}
 
 
@@ -611,6 +645,10 @@ def subadmin_reassign_task(
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
+    current_assignee = db.query(User).filter(User.id == task.assigned_to).first()
+    if not current_assignee or current_assignee.district != current_user.district:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Task is outside your district scope")
+
     new_worker = db.query(User).filter(User.id == payload.new_worker_id).first()
     if not new_worker:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="New worker not found")
@@ -620,6 +658,9 @@ def subadmin_reassign_task(
 
     if new_worker.district != current_user.district:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="New worker is outside your district")
+
+    if new_worker.id == task.assigned_to:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task is already assigned to this worker")
 
     old_worker_id = task.assigned_to
     task.assigned_to = new_worker.id

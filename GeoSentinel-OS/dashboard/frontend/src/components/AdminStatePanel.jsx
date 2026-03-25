@@ -104,6 +104,16 @@ function Pie({ completed = 0, pending = 0 }) {
   );
 }
 
+const INITIAL_NEW_USER = {
+  name: "",
+  email: "",
+  password: "",
+  role: "worker",
+  state: "Maharashtra",
+  district: "",
+  taluka: "",
+};
+
 export default function AdminStatePanel() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -118,48 +128,52 @@ export default function AdminStatePanel() {
   const [fundSummary, setFundSummary] = React.useState([]);
   const [users, setUsers] = React.useState([]);
 
-  const [newUser, setNewUser] = React.useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "worker",
-    state: "Maharashtra",
-    district: "",
-    taluka: "",
-  });
+  const [newUser, setNewUser] = React.useState(INITIAL_NEW_USER);
+
+  const loadDashboard = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    const [statsRes, districtRes, talukaRes, workerRes, taskRes, spoofRes, fundRes, usersRes] = await Promise.allSettled([
+      fetchAdminStats(),
+      fetchAdminDistricts(),
+      fetchAdminTalukas(),
+      fetchAdminWorkers(),
+      fetchAdminTasks(),
+      fetchAdminSpoofCases(),
+      fetchFundSummary(),
+      fetchAdminUsers(),
+    ]);
+
+    setStats(statsRes.status === "fulfilled" ? (statsRes.value || {}) : {});
+    setDistricts(districtRes.status === "fulfilled" && Array.isArray(districtRes.value) ? districtRes.value : []);
+    setTalukas(talukaRes.status === "fulfilled" && Array.isArray(talukaRes.value) ? talukaRes.value : []);
+    setWorkers(workerRes.status === "fulfilled" && Array.isArray(workerRes.value) ? workerRes.value : []);
+    setTasks(taskRes.status === "fulfilled" && Array.isArray(taskRes.value) ? taskRes.value : []);
+    setSpoofCases(spoofRes.status === "fulfilled" && Array.isArray(spoofRes.value) ? spoofRes.value : []);
+    setFundSummary(fundRes.status === "fulfilled" && Array.isArray(fundRes.value) ? fundRes.value : []);
+    setUsers(usersRes.status === "fulfilled" && Array.isArray(usersRes.value) ? usersRes.value : []);
+
+    const hasFailures = [statsRes, districtRes, talukaRes, workerRes, taskRes, spoofRes, fundRes, usersRes].some(
+      (result) => result.status === "rejected"
+    );
+    if (hasFailures) {
+      setError("Some admin data could not be loaded. Showing available information.");
+    }
+
+    setLoading(false);
+  }, []);
 
   React.useEffect(() => {
     let mounted = true;
 
     async function load() {
-      setLoading(true);
-      setError("");
       try {
-        const [statsData, districtData, talukaData, workerData, taskData, spoofData, fundData, usersData] = await Promise.all([
-          fetchAdminStats(),
-          fetchAdminDistricts(),
-          fetchAdminTalukas(),
-          fetchAdminWorkers(),
-          fetchAdminTasks(),
-          fetchAdminSpoofCases(),
-          fetchFundSummary(),
-          fetchAdminUsers(),
-        ]);
-
         if (!mounted) return;
-        setStats(statsData || {});
-        setDistricts(Array.isArray(districtData) ? districtData : []);
-        setTalukas(Array.isArray(talukaData) ? talukaData : []);
-        setWorkers(Array.isArray(workerData) ? workerData : []);
-        setTasks(Array.isArray(taskData) ? taskData : []);
-        setSpoofCases(Array.isArray(spoofData) ? spoofData : []);
-        setFundSummary(Array.isArray(fundData) ? fundData : []);
-        setUsers(Array.isArray(usersData) ? usersData : []);
+        await loadDashboard();
       } catch (err) {
         if (!mounted) return;
         setError(err?.response?.data?.detail || err?.message || "Failed to load state analytics");
-      } finally {
-        if (mounted) setLoading(false);
       }
     }
 
@@ -167,13 +181,17 @@ export default function AdminStatePanel() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [loadDashboard]);
 
   async function onCreateUser(event) {
     event.preventDefault();
     try {
+      setError("");
+      setMessage("");
       await createAdminUser(newUser);
+      setNewUser(INITIAL_NEW_USER);
       setMessage("User created successfully");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to create user");
     }
@@ -181,8 +199,13 @@ export default function AdminStatePanel() {
 
   async function onToggleUserStatus(user) {
     try {
-      await updateAdminUser({ user_id: user.id, is_active: !(user.status === "active") });
+      setError("");
+      const isActive = typeof user?.is_active === "boolean"
+        ? user.is_active
+        : String(user?.status || "active").toLowerCase() === "active";
+      await updateAdminUser({ user_id: user.id, is_active: !isActive });
       setMessage("User status updated");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to update user");
     }
@@ -190,8 +213,10 @@ export default function AdminStatePanel() {
 
   async function onDeleteUser(userId) {
     try {
+      setError("");
       await deleteAdminUser(userId);
       setMessage("User deleted");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to delete user");
     }
@@ -204,8 +229,10 @@ export default function AdminStatePanel() {
       return;
     }
     try {
+      setError("");
       const result = await allocateDistrictFunds({ district, amount: 25000, reason: "State strategic allocation" });
       setMessage(result?.message || "Funds allocated");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to allocate funds");
     }
@@ -221,6 +248,7 @@ export default function AdminStatePanel() {
     }
 
     try {
+      setError("");
       const result = await transferWorker({
         worker_id: worker.id,
         new_district: district,
@@ -228,6 +256,7 @@ export default function AdminStatePanel() {
         reason: "State-level resource balancing",
       });
       setMessage(result?.message || "Worker transferred");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to transfer worker");
     }
@@ -235,18 +264,33 @@ export default function AdminStatePanel() {
 
   async function onFlagDistrict(name) {
     try {
+      setError("");
       const result = await flagDistrict({ district: name, severity: "high", reason: "Low performance and alerts" });
       setMessage(result?.message || "District flagged");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to flag district");
     }
   }
 
-  const districtMarkers = districts.map((row, index) => ({
-    ...row,
-    latitude: 18.8 + index * 0.25,
-    longitude: 73.5 + index * 0.25,
-  }));
+  const districtMarkers = districts
+    .map((row) => {
+      const rawLat = row.latitude ?? row.lat ?? row.coords?.lat;
+      const rawLng = row.longitude ?? row.lng ?? row.coords?.lng;
+      const latitude = Number(rawLat);
+      const longitude = Number(rawLng);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null;
+      }
+
+      return {
+        ...row,
+        latitude,
+        longitude,
+      };
+    })
+    .filter(Boolean);
 
   const attendanceTrend = (stats.attendance_trend || []).map((item) => Number(item.count || 0));
 
@@ -298,22 +342,28 @@ export default function AdminStatePanel() {
             </div>
           </div>
 
-          <MapContainer center={[19.0, 74.0]} zoom={7} className="mt-3 h-72 w-full rounded-xl">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {districtMarkers.map((row) => (
-              <Marker key={row.district_name} position={[row.latitude, row.longitude]} icon={row.status === "Needs Improvement" ? warningIcon : goodIcon}>
-                <Popup>
-                  <strong>{row.district_name}</strong>
-                  <br />Workers: {row.workers_count}
-                  <br />Completion: {row.task_completion_rate}%
-                  <br />Attendance: {row.attendance_rate}%
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
+          {districtMarkers.length > 0 ? (
+            <MapContainer center={[districtMarkers[0].latitude, districtMarkers[0].longitude]} zoom={7} className="mt-3 h-72 w-full rounded-xl">
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {districtMarkers.map((row) => (
+                <Marker key={row.district_name} position={[row.latitude, row.longitude]} icon={row.status === "Needs Improvement" ? warningIcon : goodIcon}>
+                  <Popup>
+                    <strong>{row.district_name}</strong>
+                    <br />Workers: {row.workers_count}
+                    <br />Completion: {row.task_completion_rate}%
+                    <br />Attendance: {row.attendance_rate}%
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
+          ) : (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              District map is unavailable because coordinates are missing in API data.
+            </div>
+          )}
         </div>
 
         <div className="glass-card p-4">
@@ -464,15 +514,22 @@ export default function AdminStatePanel() {
                 </tr>
               </thead>
               <tbody>
-                {fundSummary.map((row) => (
-                  <tr key={row.district} className="border-t border-slate-100">
-                    <td className="px-2 py-2">{row.district}</td>
-                    <td className="px-2 py-2">INR {Number(row.allocated).toLocaleString()}</td>
-                    <td className="px-2 py-2">INR {Number(row.spent).toLocaleString()}</td>
-                    <td className="px-2 py-2">{row.utilization_percent}%</td>
-                    <td className="px-2 py-2">{row.status}</td>
-                  </tr>
-                ))}
+                {fundSummary.map((row) => {
+                  const allocated = Number(row?.allocated);
+                  const spent = Number(row?.spent);
+                  const safeAllocated = Number.isFinite(allocated) ? allocated : 0;
+                  const safeSpent = Number.isFinite(spent) ? spent : 0;
+
+                  return (
+                    <tr key={row.district} className="border-t border-slate-100">
+                      <td className="px-2 py-2">{row.district}</td>
+                      <td className="px-2 py-2">INR {safeAllocated.toLocaleString()}</td>
+                      <td className="px-2 py-2">INR {safeSpent.toLocaleString()}</td>
+                      <td className="px-2 py-2">{row.utilization_percent}%</td>
+                      <td className="px-2 py-2">{row.status}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

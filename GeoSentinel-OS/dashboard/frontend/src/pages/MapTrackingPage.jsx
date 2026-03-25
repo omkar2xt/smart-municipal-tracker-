@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import API from "../services/api";
 
@@ -70,9 +70,58 @@ function distanceMeters(a, b) {
   return r * arc;
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function blendPosition(previous, next, alpha) {
+  return [
+    previous[0] + (next[0] - previous[0]) * alpha,
+    previous[1] + (next[1] - previous[1]) * alpha,
+  ];
+}
+
+const MAX_ACCEPTABLE_ACCURACY_M = 80;
+const MAX_IGNORE_ACCURACY_M = 150;
+const LAST_POSITION_CACHE_KEY = "geosentinel_last_position";
+const GEOLOCATION_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 0,
+};
+
+function readInitialPosition() {
+  try {
+    const raw = localStorage.getItem(LAST_POSITION_CACHE_KEY);
+    if (!raw) return [19.0, 73.0];
+    const parsed = JSON.parse(raw);
+    const lat = Number(parsed?.latitude);
+    const lng = Number(parsed?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return [lat, lng];
+    }
+  } catch {
+    // Ignore malformed cache.
+  }
+  return [19.0, 73.0];
+}
+
+function cacheLastPosition(lat, lng, accuracy, heading, speed) {
+  try {
+    localStorage.setItem(
+      LAST_POSITION_CACHE_KEY,
+      JSON.stringify({ latitude: lat, longitude: lng, accuracy, heading, speed, capturedAt: Date.now() })
+    );
+  } catch {
+    // Ignore cache failures.
+  }
+}
+
 export default function MapTrackingPage() {
-  const [position, setPosition] = useState([19.0, 73.0]);
-  const [targetPosition, setTargetPosition] = useState([19.0, 73.0]);
+  const [position, setPosition] = useState(() => readInitialPosition());
+  const [targetPosition, setTargetPosition] = useState(() => readInitialPosition());
+  const [mapReady, setMapReady] = useState(false);
+  const [mapKey, setMapKey] = useState(1);
   const [accuracy, setAccuracy] = useState(null);
   const [speed, setSpeed] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -80,6 +129,8 @@ export default function MapTrackingPage() {
   const [accelData, setAccelData] = useState({ x: 0, y: 0, z: 0, magnitude: 0 });
   const [sensorEnabled, setSensorEnabled] = useState(false);
   const [sensorStatus, setSensorStatus] = useState("Sensors pending permission");
+  const [gpsEnabled, setGpsEnabled] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState("GPS permission not requested");
   const [trackingError, setTrackingError] = useState("");
   const [platformHint, setPlatformHint] = useState("");
 
@@ -90,6 +141,8 @@ export default function MapTrackingPage() {
   const directionRef = useRef(0);
   const movingRef = useRef(false);
   const accelRef = useRef({ x: 0, y: 0, z: 0, magnitude: 0 });
+  const gravityRef = useRef({ x: 0, y: 0, z: 9.81 });
+  const watchIdRef = useRef(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && !window.isSecureContext) {
@@ -98,22 +151,41 @@ export default function MapTrackingPage() {
   }, []);
 
   useEffect(() => {
+    if (mapReady) return undefined;
+    const timeout = window.setTimeout(() => {
+      setTrackingError((prev) => prev || "Map is loading slowly. Tap Reload Map if tiles are not visible.");
+    }, 9000);
+    return () => window.clearTimeout(timeout);
+  }, [mapReady]);
+
+  useEffect(() => {
     let rafId = 0;
     const animate = () => {
+      let shouldContinue = true;
       setPosition((current) => {
         const dx = targetPosition[0] - current[0];
         const dy = targetPosition[1] - current[1];
         const closeEnough = Math.abs(dx) < 0.000002 && Math.abs(dy) < 0.000002;
         if (closeEnough) {
+          shouldContinue = false;
           return targetPosition;
         }
         return [current[0] + dx * 0.25, current[1] + dy * 0.25];
       });
-      rafId = requestAnimationFrame(animate);
+
+      if (shouldContinue) {
+        rafId = requestAnimationFrame(animate);
+      } else {
+        rafId = 0;
+      }
     };
 
     rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, [targetPosition]);
 
   useEffect(() => {
@@ -128,79 +200,186 @@ export default function MapTrackingPage() {
     accelRef.current = accelData;
   }, [accelData]);
 
+  function stopGpsTracking() {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setGpsEnabled(false);
+    setGpsStatus("GPS tracking stopped");
+  }
+
+  function handleGeolocationError(error) {
+    const code = Number(error?.code);
+    let message = error?.message || "Unable to access live location.";
+
+    if (code === 1) {
+      message = "Location permission denied. Enable location access in browser settings.";
+    } else if (code === 2) {
+      message = "Location unavailable. Check GPS signal and try again.";
+    } else if (code === 3) {
+      message = "Location request timed out. Move to open sky and retry.";
+    }
+
+    setTrackingError(message);
+    setGpsEnabled(false);
+    setGpsStatus(message);
+  }
+
+  function applyLivePosition(pos) {
+    const { latitude, longitude, speed, heading } = pos.coords;
+    const gpsAccuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
+    const now = Date.now();
+    const nextPosition = [latitude, longitude];
+
+    if (gpsAccuracy != null && gpsAccuracy > MAX_IGNORE_ACCURACY_M) {
+      const warning = `Weak GPS signal (${Math.round(gpsAccuracy)} m). Move to open sky for better precision.`;
+      setTrackingError(warning);
+      setGpsStatus(warning);
+      return;
+    }
+
+    if (firstGpsRef.current || !lastPositionRef.current) {
+      firstGpsRef.current = false;
+      lastPositionRef.current = nextPosition;
+      lastTimestampRef.current = now;
+      setPosition(nextPosition);
+      setTargetPosition(nextPosition);
+      setAccuracy(gpsAccuracy);
+      setSpeed(Number.isFinite(speed) && speed >= 0 ? speed : 0);
+      if (Number.isFinite(heading)) {
+        setDirection(heading);
+      }
+      cacheLastPosition(latitude, longitude, gpsAccuracy, heading, speed);
+      setTrackingError("");
+      setGpsStatus("GPS tracking active");
+      return;
+    }
+
+    const prevPosition = lastPositionRef.current;
+    const distance = distanceMeters(prevPosition, nextPosition);
+    const elapsedSeconds = Math.max((now - lastTimestampRef.current) / 1000, 1);
+    const computedSpeed = distance / elapsedSeconds;
+    const effectiveSpeed = Number.isFinite(speed) && speed >= 0 ? speed : computedSpeed;
+    const movementDetected = accelRef.current.magnitude >= 0.06;
+
+    const jitterThreshold = clamp((gpsAccuracy ?? 20) * 0.35, 2.5, 14);
+    if (distance < jitterThreshold && !movementDetected) {
+      setAccuracy(gpsAccuracy);
+      setSpeed(0);
+      setTrackingError("");
+      setGpsStatus("GPS tracking active");
+      return;
+    }
+
+    const quality = gpsAccuracy == null ? 0.6 : clamp(1 - gpsAccuracy / MAX_ACCEPTABLE_ACCURACY_M, 0.15, 0.9);
+    const smoothingAlpha = movementDetected ? clamp(0.3 + quality * 0.55, 0.3, 0.88) : clamp(0.2 + quality * 0.35, 0.2, 0.55);
+    const filteredPosition = blendPosition(prevPosition, nextPosition, smoothingAlpha);
+
+    const spoofDetectionFlag = distance > 8 && !movementDetected;
+    const spoofReason = spoofDetectionFlag ? "GPS changed while accelerometer shows no movement" : "";
+
+    setTargetPosition(filteredPosition);
+    setAccuracy(gpsAccuracy);
+    setSpeed(effectiveSpeed);
+    if (Number.isFinite(heading)) {
+      setDirection(heading);
+    }
+    cacheLastPosition(filteredPosition[0], filteredPosition[1], gpsAccuracy, heading, effectiveSpeed);
+    setTrackingError("");
+    setGpsStatus("GPS tracking active");
+
+    lastPositionRef.current = filteredPosition;
+    lastTimestampRef.current = now;
+
+    if (now - lastUploadRef.current >= 7000) {
+      lastUploadRef.current = now;
+      API.post("/tracking/location", {
+        latitude: filteredPosition[0],
+        longitude: filteredPosition[1],
+        accuracy: gpsAccuracy,
+        speed: effectiveSpeed,
+        accelerometer_x: accelRef.current.x,
+        accelerometer_y: accelRef.current.y,
+        accelerometer_z: accelRef.current.z,
+        accelerometer_magnitude: accelRef.current.magnitude,
+        direction: directionRef.current,
+        movement: movementDetected,
+        spoof_detection_flag: spoofDetectionFlag,
+        spoof_reason: spoofReason,
+      }).catch((error) => {
+        console.error("Tracking sync failed", error);
+      });
+    }
+  }
+
+  function startGpsTracking() {
+    if (!("geolocation" in navigator)) {
+      setTrackingError("Geolocation is not supported on this device/browser.");
+      setGpsStatus("Geolocation unsupported");
+      return;
+    }
+
+    setTrackingError("");
+    setGpsStatus("Requesting GPS permission...");
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyLivePosition(pos);
+        setGpsEnabled(true);
+
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (nextPos) => {
+            setGpsEnabled(true);
+            applyLivePosition(nextPos);
+          },
+          handleGeolocationError,
+          GEOLOCATION_OPTIONS
+        );
+      },
+      handleGeolocationError,
+      GEOLOCATION_OPTIONS
+    );
+  }
+
   useEffect(() => {
     if (!("geolocation" in navigator)) {
       setTrackingError("Geolocation is not supported on this device/browser.");
+      setGpsStatus("Geolocation unsupported");
       return undefined;
     }
 
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude, speed } = pos.coords;
-        const now = Date.now();
-        const nextPosition = [latitude, longitude];
-
-        if (firstGpsRef.current || !lastPositionRef.current) {
-          firstGpsRef.current = false;
-          lastPositionRef.current = nextPosition;
-          lastTimestampRef.current = now;
-          setTargetPosition(nextPosition);
-          setAccuracy(pos.coords.accuracy ?? null);
-          setSpeed(Number.isFinite(speed) && speed >= 0 ? speed : 0);
-          setTrackingError("");
-          return;
-        }
-
-        const prevPosition = lastPositionRef.current;
-        const distance = distanceMeters(prevPosition, nextPosition);
-        const elapsedSeconds = Math.max((now - lastTimestampRef.current) / 1000, 1);
-        const computedSpeed = distance / elapsedSeconds;
-        const effectiveSpeed = Number.isFinite(speed) && speed >= 0 ? speed : computedSpeed;
-        const movementDetected = accelRef.current.magnitude >= 0.12;
-
-        const spoofDetectionFlag = distance > 8 && !movementDetected;
-        const spoofReason = spoofDetectionFlag ? "GPS changed while accelerometer shows no movement" : "";
-
-        setTargetPosition(nextPosition);
-        setAccuracy(pos.coords.accuracy ?? null);
-        setSpeed(effectiveSpeed);
-        setTrackingError("");
-
-        lastPositionRef.current = nextPosition;
-        lastTimestampRef.current = now;
-
-        if (now - lastUploadRef.current >= 7000) {
-          lastUploadRef.current = now;
-          API.post("/tracking/location", {
-            latitude,
-            longitude,
-            accuracy: pos.coords.accuracy ?? null,
-            speed: effectiveSpeed,
-            accelerometer_x: accelRef.current.x,
-            accelerometer_y: accelRef.current.y,
-            accelerometer_z: accelRef.current.z,
-            accelerometer_magnitude: accelRef.current.magnitude,
-            direction: directionRef.current,
-            movement: movementDetected,
-            spoof_detection_flag: spoofDetectionFlag,
-            spoof_reason: spoofReason,
-          }).catch((error) => {
-            console.error("Tracking sync failed", error);
-          });
-        }
-      },
-      (error) => {
-        setTrackingError(error?.message || "Unable to access live location.");
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 15000,
-      }
-    );
+    let active = true;
+    if (navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((result) => {
+          if (!active) return;
+          if (result.state === "granted") {
+            startGpsTracking();
+          } else if (result.state === "denied") {
+            setGpsStatus("Location permission denied. Tap Enable GPS after allowing permission.");
+          } else {
+            setGpsStatus("Tap Enable GPS to allow high-accuracy live tracking.");
+          }
+        })
+        .catch(() => {
+          if (!active) return;
+          setGpsStatus("Tap Enable GPS to start high-accuracy location tracking.");
+        });
+    } else {
+      setGpsStatus("Tap Enable GPS to start high-accuracy location tracking.");
+    }
 
     return () => {
-      navigator.geolocation.clearWatch(watchId);
+      active = false;
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
     };
   }, []);
 
@@ -208,13 +387,25 @@ export default function MapTrackingPage() {
     if (!sensorEnabled) return undefined;
 
     const onMotion = (event) => {
-      const acc = event.acceleration || event.accelerationIncludingGravity;
-      const x = Number(acc?.x || 0);
-      const y = Number(acc?.y || 0);
-      const z = Number(acc?.z || 0);
-      const magnitude = Math.sqrt(x * x + y * y + z * z);
-      setAccelData({ x, y, z, magnitude });
-      setMoving(magnitude >= 0.12);
+      const raw = event.accelerationIncludingGravity || event.acceleration;
+      const rawX = Number(raw?.x || 0);
+      const rawY = Number(raw?.y || 0);
+      const rawZ = Number(raw?.z || 0);
+
+      const gravityAlpha = 0.82;
+      const g = gravityRef.current;
+      const gx = gravityAlpha * g.x + (1 - gravityAlpha) * rawX;
+      const gy = gravityAlpha * g.y + (1 - gravityAlpha) * rawY;
+      const gz = gravityAlpha * g.z + (1 - gravityAlpha) * rawZ;
+      gravityRef.current = { x: gx, y: gy, z: gz };
+
+      const linearX = rawX - gx;
+      const linearY = rawY - gy;
+      const linearZ = rawZ - gz;
+      const linearMagnitude = Math.sqrt(linearX * linearX + linearY * linearY + linearZ * linearZ);
+
+      setAccelData({ x: linearX, y: linearY, z: linearZ, magnitude: linearMagnitude });
+      setMoving(linearMagnitude >= 0.06);
     };
 
     const onOrientation = (event) => {
@@ -265,6 +456,11 @@ export default function MapTrackingPage() {
     }
   }
 
+  function reloadMap() {
+    setMapReady(false);
+    setMapKey((prev) => prev + 1);
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -273,12 +469,35 @@ export default function MapTrackingPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={startGpsTracking}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Enable GPS
+          </button>
+          <button
+            type="button"
+            onClick={stopGpsTracking}
+            disabled={!gpsEnabled}
+            className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Stop GPS
+          </button>
+          <button
+            type="button"
             onClick={requestSensorPermissions}
             className="rounded-lg bg-civic-600 px-4 py-2 text-sm font-semibold text-white"
           >
             Enable Sensors
           </button>
+          <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">{gpsStatus}</span>
           <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{sensorStatus}</span>
+          <button
+            type="button"
+            onClick={reloadMap}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+          >
+            Reload Map
+          </button>
           {trackingError ? <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700">{trackingError}</span> : null}
           {platformHint ? <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">{platformHint}</span> : null}
         </div>
@@ -286,14 +505,47 @@ export default function MapTrackingPage() {
 
       <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <MapContainer center={position} zoom={17} className="h-[65vh] w-full">
+          <div className="relative">
+            {!mapReady ? (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-50/80 text-sm font-medium text-slate-600">
+                Loading map...
+              </div>
+            ) : null}
+            <MapContainer
+              key={mapKey}
+              center={position}
+              zoom={17}
+              whenReady={() => setMapReady(true)}
+              className="h-[70vh] min-h-[420px] w-full"
+            >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              eventHandlers={{
+                load: () => setMapReady(true),
+                tileerror: () => {
+                  setMapReady(true);
+                  setTrackingError((prev) => prev || "Unable to load map tiles. Check connection and reload map.");
+                },
+              }}
             />
-            <Marker position={position} icon={headingIcon(direction)} />
+            <Marker position={position} icon={headingIcon(direction)}>
+              <Popup>
+                Latitude: {position[0].toFixed(6)}
+                <br />Longitude: {position[1].toFixed(6)}
+                <br />Accuracy: {accuracy != null ? `${Math.round(accuracy)} m` : "--"}
+              </Popup>
+            </Marker>
+            {accuracy != null ? (
+              <Circle
+                center={position}
+                radius={Math.max(Number(accuracy) || 0, 2)}
+                pathOptions={{ color: "#2563eb", fillColor: "#60a5fa", fillOpacity: 0.15 }}
+              />
+            ) : null}
             <UpdateMap position={position} />
-          </MapContainer>
+            </MapContainer>
+          </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

@@ -105,6 +105,7 @@ function Pie({ completed = 0, pending = 0 }) {
 
 export default function SubAdminPanel() {
   const [loading, setLoading] = React.useState(true);
+  const [actionLoading, setActionLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const [message, setMessage] = React.useState("");
 
@@ -114,55 +115,68 @@ export default function SubAdminPanel() {
   const [tasks, setTasks] = React.useState([]);
   const [spoofCases, setSpoofCases] = React.useState([]);
 
+  const loadDashboard = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const [statsData, talukasData, workersData, tasksData, spoofData] = await Promise.all([
+        fetchSubAdminStats(),
+        fetchSubAdminTalukas(),
+        fetchSubAdminWorkers(),
+        fetchSubAdminTasks(),
+        fetchSubAdminSpoofCases(),
+      ]);
+
+      setStats(statsData || {});
+      setTalukas(Array.isArray(talukasData) ? talukasData : []);
+      setWorkers(Array.isArray(workersData) ? workersData : []);
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
+      setSpoofCases(Array.isArray(spoofData) ? spoofData : []);
+    } catch (err) {
+      setError(err?.response?.data?.detail || err?.message || "Failed to load district analytics");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     let mounted = true;
 
     async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const [statsData, talukasData, workersData, tasksData, spoofData] = await Promise.all([
-          fetchSubAdminStats(),
-          fetchSubAdminTalukas(),
-          fetchSubAdminWorkers(),
-          fetchSubAdminTasks(),
-          fetchSubAdminSpoofCases(),
-        ]);
-
-        if (!mounted) return;
-        setStats(statsData || {});
-        setTalukas(Array.isArray(talukasData) ? talukasData : []);
-        setWorkers(Array.isArray(workersData) ? workersData : []);
-        setTasks(Array.isArray(tasksData) ? tasksData : []);
-        setSpoofCases(Array.isArray(spoofData) ? spoofData : []);
-      } catch (err) {
-        if (!mounted) return;
-        setError(err?.response?.data?.detail || err?.message || "Failed to load district analytics");
-      } finally {
-        if (mounted) setLoading(false);
-      }
+      if (!mounted) return;
+      await loadDashboard();
     }
 
     load();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [loadDashboard]);
 
   async function onPlanDecision(taskId, decision) {
     try {
+      setActionLoading(true);
+      setError("");
+      setMessage("");
       const result = await decideTaskPlan(taskId, {
         decision,
         reason: `Action taken from district dashboard: ${decision}`,
       });
       setMessage(result?.message || "Plan decision updated");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to update plan decision");
+    } finally {
+      setActionLoading(false);
     }
   }
 
   async function onAdjustBudget(task) {
     try {
+      setActionLoading(true);
+      setError("");
+      setMessage("");
       const currentFund = Number(task.fund_allocated || 0);
       const newFund = Math.max(currentFund + 1000, 0);
       const result = await adjustTaskBudget(task.id, {
@@ -171,53 +185,99 @@ export default function SubAdminPanel() {
         reason: "District-level incremental budget adjustment",
       });
       setMessage(result?.message || "Budget adjusted");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to adjust budget");
+    } finally {
+      setActionLoading(false);
     }
   }
 
   async function onReassign(task) {
-    const sameTalukaWorkers = workers.filter((worker) => worker.taluka === task.taluka && worker.id !== task.assigned_to);
-    const target = sameTalukaWorkers[0] || workers.find((worker) => worker.id !== task.assigned_to);
+    const normalizeTaluka = (value) => String(value || "").trim().toLowerCase();
+    const currentAssigneeId = Number(task.assigned_to);
+    const workerPool = workers.filter((worker) => Number(worker.id) !== currentAssigneeId);
+    const activeWorkerPool = workerPool.filter((worker) => String(worker.status || "").toLowerCase() === "active");
+    const sortByAssignedTasks = (a, b) => Number(a.assigned_tasks || 0) - Number(b.assigned_tasks || 0);
+
+    const sameTalukaActive = activeWorkerPool
+      .filter((worker) => normalizeTaluka(worker.taluka) === normalizeTaluka(task.taluka))
+      .sort(sortByAssignedTasks);
+    const sameTalukaAny = workerPool
+      .filter((worker) => normalizeTaluka(worker.taluka) === normalizeTaluka(task.taluka))
+      .sort(sortByAssignedTasks);
+    const anyActive = [...activeWorkerPool].sort(sortByAssignedTasks);
+    const anyWorker = [...workerPool].sort(sortByAssignedTasks);
+
+    const target = sameTalukaActive[0] || sameTalukaAny[0] || anyActive[0] || anyWorker[0];
     if (!target) {
       setError("No alternate worker available for reassignment");
       return;
     }
 
     try {
+      setActionLoading(true);
+      setError("");
+      setMessage("");
       const result = await reassignTask(task.id, {
         new_worker_id: target.id,
         reason: "District balancing reassignment",
       });
       setMessage(result?.message || "Task reassigned");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to reassign task");
+    } finally {
+      setActionLoading(false);
     }
   }
 
   async function onFlagTaluka(talukaName) {
     try {
+      setActionLoading(true);
+      setError("");
+      setMessage("");
       const result = await flagTaluka(talukaName, {
         reason: "Performance/attendance anomaly observed",
         severity: "high",
       });
       setMessage(result?.message || "Taluka flagged");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to flag taluka");
+    } finally {
+      setActionLoading(false);
     }
   }
 
   const completionValues = talukas.map((row) => Number(row.task_completion_rate || 0));
   const attendancePoints = (stats.attendance_trend || []).map((row) => Number(row.count || 0));
-  const mapMarkers = talukas.map((row, index) => ({
-    ...row,
-    latitude: 19.0 + index * 0.05,
-    longitude: 73.7 + index * 0.05,
-  }));
+  const mapMarkers = talukas
+    .map((row) => {
+      const latitude = Number(row.latest_latitude);
+      const longitude = Number(row.latest_longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null;
+      }
+
+      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+        return null;
+      }
+
+      return {
+        ...row,
+        latitude,
+        longitude,
+      };
+    })
+    .filter(Boolean);
+  const mapCenter = mapMarkers.length ? [mapMarkers[0].latitude, mapMarkers[0].longitude] : [19.1, 73.8];
 
   return (
     <div className="space-y-4">
       {loading ? <div className="rounded-xl bg-civic-50 px-4 py-3 text-sm text-civic-700">Loading district analytics...</div> : null}
+      {actionLoading ? <div className="rounded-xl bg-civic-50 px-4 py-3 text-sm text-civic-700">Applying action...</div> : null}
       {error ? <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
       {message ? <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
 
@@ -287,26 +347,33 @@ export default function SubAdminPanel() {
 
         <div className="glass-card p-4">
           <p className="text-lg font-bold text-civic-900">District Taluka Map</p>
-          <MapContainer center={[19.1, 73.8]} zoom={10} className="mt-3 h-64 w-full rounded-xl">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {mapMarkers.map((row) => (
-              <Marker
-                key={row.taluka}
-                position={[row.latitude, row.longitude]}
-                icon={row.status === "Needs Attention" ? warningIcon : goodIcon}
-              >
-                <Popup>
-                  <strong>{row.taluka}</strong>
-                  <br />Workers: {row.workers_count}
-                  <br />Completion: {row.task_completion_rate}%
-                  <br />Attendance: {row.attendance_rate}%
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
+          {mapMarkers.length ? (
+            <MapContainer center={mapCenter} zoom={10} className="mt-3 h-64 w-full rounded-xl">
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {mapMarkers.map((row) => (
+                <Marker
+                  key={row.taluka}
+                  position={[row.latitude, row.longitude]}
+                  icon={row.status === "Needs Attention" ? warningIcon : goodIcon}
+                >
+                  <Popup>
+                    <strong>{row.taluka}</strong>
+                    <br />Workers: {row.workers_count}
+                    <br />Completion: {row.task_completion_rate}%
+                    <br />Attendance: {row.attendance_rate}%
+                    <br />Lat/Lng: {row.latitude.toFixed(5)}, {row.longitude.toFixed(5)}
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
+          ) : (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Taluka map is unavailable because recent worker coordinates are missing.
+            </div>
+          )}
         </div>
       </div>
 
@@ -335,7 +402,7 @@ export default function SubAdminPanel() {
                     <td className="py-2 pr-3">{row.status}</td>
                     <td className="py-2">
                       {row.status === "Needs Attention" ? (
-                        <button type="button" onClick={() => onFlagTaluka(row.taluka)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white">Flag</button>
+                        <button type="button" disabled={actionLoading} onClick={() => onFlagTaluka(row.taluka)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Flag</button>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={14} />OK</span>
                       )}
@@ -396,10 +463,10 @@ export default function SubAdminPanel() {
                   <td className="py-2 pr-3">INR {Number(task.fund_allocated || 0).toLocaleString()}</td>
                   <td className="py-2">
                     <div className="flex flex-wrap gap-1">
-                      <button type="button" onClick={() => onPlanDecision(task.id, "approve")} className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700">Approve</button>
-                      <button type="button" onClick={() => onPlanDecision(task.id, "reject")} className="rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-700">Reject</button>
-                      <button type="button" onClick={() => onAdjustBudget(task)} className="rounded-lg border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-700">Adjust Budget</button>
-                      <button type="button" onClick={() => onReassign(task)} className="rounded-lg border border-civic-300 px-2 py-1 text-xs font-semibold text-civic-700">Reassign</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onPlanDecision(task.id, "approve")} className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">Approve</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onPlanDecision(task.id, "reject")} className="rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60">Reject</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onAdjustBudget(task)} className="rounded-lg border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-60">Adjust Budget</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onReassign(task)} className="rounded-lg border border-civic-300 px-2 py-1 text-xs font-semibold text-civic-700 disabled:cursor-not-allowed disabled:opacity-60">Reassign</button>
                     </div>
                   </td>
                 </tr>

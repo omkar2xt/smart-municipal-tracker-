@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from config.settings import get_settings
 from database.session import get_db
 from models.enums import Role
 from models.schemas import UploadCreate, UploadResponse
@@ -14,8 +15,14 @@ from services.auth_service import get_current_user
 from services.validation_service import validate_task_proof_consistency
 
 router = APIRouter()
-UPLOADS_DIR = Path("uploads")
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+settings = get_settings()
+UPLOADS_DIR = Path(settings.upload_dir)
+try:
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Serverless filesystems are read-only outside /tmp.
+    UPLOADS_DIR = Path("/tmp/uploads")
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_image_proof_path(stored_path: str) -> Path:

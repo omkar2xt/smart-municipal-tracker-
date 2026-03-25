@@ -16,6 +16,7 @@ from models.attendance_model import Attendance
 from models.task_model import Task
 from models.location_log_model import LocationLog
 from models.audit_log_model import AuditLog
+from models.enums import TaskStatus
 from utils.security import hash_password
 
 logger = logging.getLogger(__name__)
@@ -52,12 +53,6 @@ def seed_default_users():
     db = SessionLocal()
     
     try:
-        # Check if admin already exists
-        existing_admin = db.query(User).filter(User.email == "admin@geosentinel.gov").first()
-        if existing_admin:
-            print("✓ Database already seeded with default users")
-            return
-        
         # Create Tier-1 to Tier-4 hierarchy users
         seed_defaults = {
             "SEED_ADMIN_PASSWORD": "change-me-admin",
@@ -92,60 +87,92 @@ def seed_default_users():
         taluka_admin_password = seed_values["SEED_TALUKA_ADMIN_PASSWORD"] or seed_defaults["SEED_TALUKA_ADMIN_PASSWORD"]
         worker_password = seed_values["SEED_WORKER_PASSWORD"] or seed_defaults["SEED_WORKER_PASSWORD"]
 
-        tier1_admin = User(
-            name="Admin",
-            email="admin@geosentinel.gov",
-            role="admin",
-            state="Maharashtra",
-            password_hash=hash_password(admin_password),
-            is_active=True,
-            created_at=datetime.now(timezone.utc)
-        )
-        db.add(tier1_admin)
-        
-        # Create Tier-2 Sub-Admin user
-        tier2_sub_admin = User(
-            name="Sub-Admin",
-            email="subadmin@geosentinel.gov",
-            role="sub_admin",
-            state="Maharashtra",
-            district="Pune",
-            password_hash=hash_password(sub_admin_password),
-            is_active=True,
-            created_at=datetime.now(timezone.utc)
-        )
-        db.add(tier2_sub_admin)
-        
-        # Create Tier-3 Taluka Admin user
-        tier3_taluka_admin = User(
-            name="Ward Officer",
-            email="taluka@geosentinel.gov",
-            role="taluka_admin",
-            state="Maharashtra",
-            district="Pune",
-            taluka="Hadapsar",
-            password_hash=hash_password(taluka_admin_password),
-            is_active=True,
-            created_at=datetime.now(timezone.utc)
-        )
-        db.add(tier3_taluka_admin)
-        
-        # Create Tier-4 Worker
-        tier4_user = User(
-            name="Ground Worker",
-            email="worker@geosentinel.gov",
-            role="worker",
-            state="Maharashtra",
-            district="Pune",
-            taluka="Hadapsar",
-            password_hash=hash_password(worker_password),
-            is_active=True,
-            created_at=datetime.now(timezone.utc)
-        )
-        db.add(tier4_user)
+        user_specs = [
+            {
+                "name": "Admin",
+                "email": "admin@geosentinel.gov",
+                "role": "admin",
+                "state": "Maharashtra",
+                "district": None,
+                "taluka": None,
+                "password": admin_password,
+            },
+            {
+                "name": "Sub-Admin",
+                "email": "subadmin@geosentinel.gov",
+                "role": "sub_admin",
+                "state": "Maharashtra",
+                "district": "Pune",
+                "taluka": None,
+                "password": sub_admin_password,
+            },
+            {
+                "name": "Ward Officer",
+                "email": "taluka@geosentinel.gov",
+                "role": "taluka_admin",
+                "state": "Maharashtra",
+                "district": "Pune",
+                "taluka": "Hadapsar",
+                "password": taluka_admin_password,
+            },
+            {
+                "name": "Ground Worker",
+                "email": "worker@geosentinel.gov",
+                "role": "worker",
+                "state": "Maharashtra",
+                "district": "Pune",
+                "taluka": "Hadapsar",
+                "password": worker_password,
+            },
+        ]
+
+        created_count = 0
+        for spec in user_specs:
+            existing = db.query(User).filter(User.email == spec["email"]).first()
+            if existing:
+                continue
+            db.add(
+                User(
+                    name=spec["name"],
+                    email=spec["email"],
+                    role=spec["role"],
+                    state=spec["state"],
+                    district=spec["district"],
+                    taluka=spec["taluka"],
+                    password_hash=hash_password(spec["password"]),
+                    is_active=True,
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
+            created_count += 1
+
+        db.flush()
+
+        admin_user = db.query(User).filter(User.email == "admin@geosentinel.gov").first()
+        worker_user = db.query(User).filter(User.email == "worker@geosentinel.gov").first()
+        demo_task = db.query(Task).filter(Task.title == "Demo Sanitation Sweep", Task.assigned_to == (worker_user.id if worker_user else -1)).first() if worker_user else None
+        if admin_user and worker_user and not demo_task:
+            db.add(
+                Task(
+                    title="Demo Sanitation Sweep",
+                    description="Sample task for production readiness checks and fund governance demo",
+                    fund_allocated=0,
+                    status=TaskStatus.PENDING,
+                    assigned_to=worker_user.id,
+                    assigned_by=admin_user.id,
+                    expected_latitude=18.5204,
+                    expected_longitude=73.8567,
+                    geofence_id="demo-pune-zone",
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
+            created_count += 1
         
         db.commit()
-        print("✓ Default users created successfully")
+        if created_count == 0:
+            print("✓ Database already has required seed users/tasks")
+        else:
+            print(f"✓ Seeded {created_count} default record(s)")
         if missing_seed_vars:
             print("  Some seed passwords used defaults because SEED_* variables were missing")
         else:
