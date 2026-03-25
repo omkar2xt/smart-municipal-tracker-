@@ -105,6 +105,7 @@ function Pie({ completed = 0, pending = 0 }) {
 
 export default function SubAdminPanel() {
   const [loading, setLoading] = React.useState(true);
+  const [actionLoading, setActionLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const [message, setMessage] = React.useState("");
 
@@ -114,55 +115,66 @@ export default function SubAdminPanel() {
   const [tasks, setTasks] = React.useState([]);
   const [spoofCases, setSpoofCases] = React.useState([]);
 
+  const loadDashboard = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const [statsData, talukasData, workersData, tasksData, spoofData] = await Promise.all([
+        fetchSubAdminStats(),
+        fetchSubAdminTalukas(),
+        fetchSubAdminWorkers(),
+        fetchSubAdminTasks(),
+        fetchSubAdminSpoofCases(),
+      ]);
+
+      setStats(statsData || {});
+      setTalukas(Array.isArray(talukasData) ? talukasData : []);
+      setWorkers(Array.isArray(workersData) ? workersData : []);
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
+      setSpoofCases(Array.isArray(spoofData) ? spoofData : []);
+    } catch (err) {
+      setError(err?.response?.data?.detail || err?.message || "Failed to load district analytics");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     let mounted = true;
 
     async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const [statsData, talukasData, workersData, tasksData, spoofData] = await Promise.all([
-          fetchSubAdminStats(),
-          fetchSubAdminTalukas(),
-          fetchSubAdminWorkers(),
-          fetchSubAdminTasks(),
-          fetchSubAdminSpoofCases(),
-        ]);
-
-        if (!mounted) return;
-        setStats(statsData || {});
-        setTalukas(Array.isArray(talukasData) ? talukasData : []);
-        setWorkers(Array.isArray(workersData) ? workersData : []);
-        setTasks(Array.isArray(tasksData) ? tasksData : []);
-        setSpoofCases(Array.isArray(spoofData) ? spoofData : []);
-      } catch (err) {
-        if (!mounted) return;
-        setError(err?.response?.data?.detail || err?.message || "Failed to load district analytics");
-      } finally {
-        if (mounted) setLoading(false);
-      }
+      if (!mounted) return;
+      await loadDashboard();
     }
 
     load();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [loadDashboard]);
 
   async function onPlanDecision(taskId, decision) {
     try {
+      setActionLoading(true);
+      setError("");
       const result = await decideTaskPlan(taskId, {
         decision,
         reason: `Action taken from district dashboard: ${decision}`,
       });
       setMessage(result?.message || "Plan decision updated");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to update plan decision");
+    } finally {
+      setActionLoading(false);
     }
   }
 
   async function onAdjustBudget(task) {
     try {
+      setActionLoading(true);
+      setError("");
       const currentFund = Number(task.fund_allocated || 0);
       const newFund = Math.max(currentFund + 1000, 0);
       const result = await adjustTaskBudget(task.id, {
@@ -171,8 +183,11 @@ export default function SubAdminPanel() {
         reason: "District-level incremental budget adjustment",
       });
       setMessage(result?.message || "Budget adjusted");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to adjust budget");
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -185,25 +200,35 @@ export default function SubAdminPanel() {
     }
 
     try {
+      setActionLoading(true);
+      setError("");
       const result = await reassignTask(task.id, {
         new_worker_id: target.id,
         reason: "District balancing reassignment",
       });
       setMessage(result?.message || "Task reassigned");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to reassign task");
+    } finally {
+      setActionLoading(false);
     }
   }
 
   async function onFlagTaluka(talukaName) {
     try {
+      setActionLoading(true);
+      setError("");
       const result = await flagTaluka(talukaName, {
         reason: "Performance/attendance anomaly observed",
         severity: "high",
       });
       setMessage(result?.message || "Taluka flagged");
+      await loadDashboard();
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to flag taluka");
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -218,6 +243,7 @@ export default function SubAdminPanel() {
   return (
     <div className="space-y-4">
       {loading ? <div className="rounded-xl bg-civic-50 px-4 py-3 text-sm text-civic-700">Loading district analytics...</div> : null}
+      {actionLoading ? <div className="rounded-xl bg-civic-50 px-4 py-3 text-sm text-civic-700">Applying action...</div> : null}
       {error ? <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
       {message ? <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
 
@@ -396,10 +422,10 @@ export default function SubAdminPanel() {
                   <td className="py-2 pr-3">INR {Number(task.fund_allocated || 0).toLocaleString()}</td>
                   <td className="py-2">
                     <div className="flex flex-wrap gap-1">
-                      <button type="button" onClick={() => onPlanDecision(task.id, "approve")} className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700">Approve</button>
-                      <button type="button" onClick={() => onPlanDecision(task.id, "reject")} className="rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-700">Reject</button>
-                      <button type="button" onClick={() => onAdjustBudget(task)} className="rounded-lg border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-700">Adjust Budget</button>
-                      <button type="button" onClick={() => onReassign(task)} className="rounded-lg border border-civic-300 px-2 py-1 text-xs font-semibold text-civic-700">Reassign</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onPlanDecision(task.id, "approve")} className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">Approve</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onPlanDecision(task.id, "reject")} className="rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60">Reject</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onAdjustBudget(task)} className="rounded-lg border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-60">Adjust Budget</button>
+                      <button type="button" disabled={actionLoading} onClick={() => onReassign(task)} className="rounded-lg border border-civic-300 px-2 py-1 text-xs font-semibold text-civic-700 disabled:cursor-not-allowed disabled:opacity-60">Reassign</button>
                     </div>
                   </td>
                 </tr>

@@ -83,10 +83,40 @@ function blendPosition(previous, next, alpha) {
 
 const MAX_ACCEPTABLE_ACCURACY_M = 80;
 const MAX_IGNORE_ACCURACY_M = 150;
+const LAST_POSITION_CACHE_KEY = "geosentinel_last_position";
+
+function readInitialPosition() {
+  try {
+    const raw = localStorage.getItem(LAST_POSITION_CACHE_KEY);
+    if (!raw) return [19.0, 73.0];
+    const parsed = JSON.parse(raw);
+    const lat = Number(parsed?.latitude);
+    const lng = Number(parsed?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return [lat, lng];
+    }
+  } catch {
+    // Ignore malformed cache.
+  }
+  return [19.0, 73.0];
+}
+
+function cacheLastPosition(lat, lng, accuracy, heading, speed) {
+  try {
+    localStorage.setItem(
+      LAST_POSITION_CACHE_KEY,
+      JSON.stringify({ latitude: lat, longitude: lng, accuracy, heading, speed, capturedAt: Date.now() })
+    );
+  } catch {
+    // Ignore cache failures.
+  }
+}
 
 export default function MapTrackingPage() {
-  const [position, setPosition] = useState([19.0, 73.0]);
-  const [targetPosition, setTargetPosition] = useState([19.0, 73.0]);
+  const [position, setPosition] = useState(() => readInitialPosition());
+  const [targetPosition, setTargetPosition] = useState(() => readInitialPosition());
+  const [mapReady, setMapReady] = useState(false);
+  const [mapKey, setMapKey] = useState(1);
   const [accuracy, setAccuracy] = useState(null);
   const [speed, setSpeed] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -113,22 +143,41 @@ export default function MapTrackingPage() {
   }, []);
 
   useEffect(() => {
+    if (mapReady) return undefined;
+    const timeout = window.setTimeout(() => {
+      setTrackingError((prev) => prev || "Map is loading slowly. Tap Reload Map if tiles are not visible.");
+    }, 9000);
+    return () => window.clearTimeout(timeout);
+  }, [mapReady]);
+
+  useEffect(() => {
     let rafId = 0;
     const animate = () => {
+      let shouldContinue = true;
       setPosition((current) => {
         const dx = targetPosition[0] - current[0];
         const dy = targetPosition[1] - current[1];
         const closeEnough = Math.abs(dx) < 0.000002 && Math.abs(dy) < 0.000002;
         if (closeEnough) {
+          shouldContinue = false;
           return targetPosition;
         }
         return [current[0] + dx * 0.25, current[1] + dy * 0.25];
       });
-      rafId = requestAnimationFrame(animate);
+
+      if (shouldContinue) {
+        rafId = requestAnimationFrame(animate);
+      } else {
+        rafId = 0;
+      }
     };
 
     rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, [targetPosition]);
 
   useEffect(() => {
@@ -151,7 +200,7 @@ export default function MapTrackingPage() {
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        const { latitude, longitude, speed } = pos.coords;
+        const { latitude, longitude, speed, heading } = pos.coords;
         const gpsAccuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
         const now = Date.now();
         const nextPosition = [latitude, longitude];
@@ -168,6 +217,10 @@ export default function MapTrackingPage() {
           setTargetPosition(nextPosition);
           setAccuracy(gpsAccuracy);
           setSpeed(Number.isFinite(speed) && speed >= 0 ? speed : 0);
+          if (Number.isFinite(heading)) {
+            setDirection(heading);
+          }
+          cacheLastPosition(latitude, longitude, gpsAccuracy, heading, speed);
           setTrackingError("");
           return;
         }
@@ -197,6 +250,10 @@ export default function MapTrackingPage() {
         setTargetPosition(filteredPosition);
         setAccuracy(gpsAccuracy);
         setSpeed(effectiveSpeed);
+        if (Number.isFinite(heading)) {
+          setDirection(heading);
+        }
+        cacheLastPosition(filteredPosition[0], filteredPosition[1], gpsAccuracy, heading, effectiveSpeed);
         setTrackingError("");
 
         lastPositionRef.current = filteredPosition;
@@ -310,6 +367,11 @@ export default function MapTrackingPage() {
     }
   }
 
+  function reloadMap() {
+    setMapReady(false);
+    setMapKey((prev) => prev + 1);
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -324,6 +386,13 @@ export default function MapTrackingPage() {
             Enable Sensors
           </button>
           <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{sensorStatus}</span>
+          <button
+            type="button"
+            onClick={reloadMap}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+          >
+            Reload Map
+          </button>
           {trackingError ? <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700">{trackingError}</span> : null}
           {platformHint ? <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">{platformHint}</span> : null}
         </div>
@@ -331,14 +400,34 @@ export default function MapTrackingPage() {
 
       <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <MapContainer center={position} zoom={17} className="h-[65vh] w-full">
+          <div className="relative">
+            {!mapReady ? (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-50/80 text-sm font-medium text-slate-600">
+                Loading map...
+              </div>
+            ) : null}
+            <MapContainer
+              key={mapKey}
+              center={position}
+              zoom={17}
+              whenReady={() => setMapReady(true)}
+              className="h-[70vh] min-h-[420px] w-full"
+            >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              eventHandlers={{
+                load: () => setMapReady(true),
+                tileerror: () => {
+                  setMapReady(true);
+                  setTrackingError((prev) => prev || "Unable to load map tiles. Check connection and reload map.");
+                },
+              }}
             />
             <Marker position={position} icon={headingIcon(direction)} />
             <UpdateMap position={position} />
-          </MapContainer>
+            </MapContainer>
+          </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

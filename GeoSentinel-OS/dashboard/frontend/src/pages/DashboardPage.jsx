@@ -59,11 +59,14 @@ function AdminPanels({
   onViewTasks,
   onUploadProof,
 }) {
-  if (role === "admin") {
+  const isAdminRole = role === "admin" || role === "state_admin";
+  const isSubAdminRole = role === "sub_admin" || role === "district_admin";
+
+  if (isAdminRole) {
     return <AdminStatePanel />;
   }
 
-  if (role === "sub_admin") {
+  if (isSubAdminRole) {
     return <SubAdminPanel />;
   }
 
@@ -182,7 +185,9 @@ export default function DashboardPage() {
     }
   }
 
-  const showDefaultTables = session?.role !== "taluka_admin" && session?.role !== "sub_admin" && session?.role !== "admin";
+  const isAdminRole = session?.role === "admin" || session?.role === "state_admin";
+  const isSubAdminRole = session?.role === "sub_admin" || session?.role === "district_admin";
+  const showDefaultTables = session?.role !== "taluka_admin" && !isSubAdminRole && !isAdminRole;
 
   return (
     <div>
