@@ -158,6 +158,7 @@ export default function SubAdminPanel() {
     try {
       setActionLoading(true);
       setError("");
+      setMessage("");
       const result = await decideTaskPlan(taskId, {
         decision,
         reason: `Action taken from district dashboard: ${decision}`,
@@ -175,6 +176,7 @@ export default function SubAdminPanel() {
     try {
       setActionLoading(true);
       setError("");
+      setMessage("");
       const currentFund = Number(task.fund_allocated || 0);
       const newFund = Math.max(currentFund + 1000, 0);
       const result = await adjustTaskBudget(task.id, {
@@ -202,6 +204,7 @@ export default function SubAdminPanel() {
     try {
       setActionLoading(true);
       setError("");
+      setMessage("");
       const result = await reassignTask(task.id, {
         new_worker_id: target.id,
         reason: "District balancing reassignment",
@@ -219,6 +222,7 @@ export default function SubAdminPanel() {
     try {
       setActionLoading(true);
       setError("");
+      setMessage("");
       const result = await flagTaluka(talukaName, {
         reason: "Performance/attendance anomaly observed",
         severity: "high",
@@ -361,7 +365,7 @@ export default function SubAdminPanel() {
                     <td className="py-2 pr-3">{row.status}</td>
                     <td className="py-2">
                       {row.status === "Needs Attention" ? (
-                        <button type="button" onClick={() => onFlagTaluka(row.taluka)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white">Flag</button>
+                        <button type="button" disabled={actionLoading} onClick={() => onFlagTaluka(row.taluka)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Flag</button>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={14} />OK</span>
                       )}
