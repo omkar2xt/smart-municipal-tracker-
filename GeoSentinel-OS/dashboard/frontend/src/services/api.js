@@ -10,7 +10,15 @@ const configuredBaseUrls = String(import.meta.env.VITE_API_BASE_URLS || "")
 
 function readCachedBaseUrl() {
   try {
-    return localStorage.getItem(API_URL_CACHE_KEY) || "";
+    const cached = localStorage.getItem(API_URL_CACHE_KEY) || "";
+    if (!cached) return "";
+    if (typeof window !== "undefined" && window.location.protocol === "https:") {
+      const lower = cached.toLowerCase();
+      if (lower.includes("localhost") || lower.includes("127.0.0.1")) {
+        return "";
+      }
+    }
+    return cached;
   } catch {
     return "";
   }

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         env_file=str(Path(__file__).resolve().parents[1] / ".env"),
         case_sensitive=False,
         extra="ignore",
+        enable_decoding=False,
     )
     
     # App
