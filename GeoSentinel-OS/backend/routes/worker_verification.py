@@ -6,14 +6,11 @@ import base64
 import hashlib
 import hmac
 import re
-import secrets
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from config.settings import get_settings
 from database.session import get_db
 from models.enums import Role, TaskStatus
 from models.task_model import Task
@@ -26,10 +23,9 @@ from schemas.schemas import (
 )
 from services.audit_service import write_audit_log
 from services.auth_service import require_role
+from services.storage_service import save_image
 
 router = APIRouter(tags=["worker-verification"])
-settings = get_settings()
-UPLOADS_ROOT = Path(settings.upload_dir).resolve()
 MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
 
 
@@ -66,16 +62,6 @@ def _decode_base64_image(value: str) -> tuple[bytes, str]:
 
     return decoded, ext
 
-
-def _save_image(raw: bytes, folder: str, prefix: str, ext: str) -> str:
-    target_dir = (UPLOADS_ROOT / folder).resolve()
-    target_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{prefix}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}.{ext}"
-    full_path = (target_dir / filename).resolve()
-    full_path.write_bytes(raw)
-    return str(full_path.relative_to(UPLOADS_ROOT).as_posix())
-
-
 @router.post("/verify-face", response_model=FaceVerificationResponse, summary="Verify worker face")
 def verify_face(
     payload: FaceVerificationRequest,
@@ -97,7 +83,7 @@ def verify_face(
 
     stored_rel_path = None
     if verified:
-        stored_rel_path = _save_image(image_bytes, "faces", f"user_{current_user.id}", ext)
+        stored_rel_path = save_image(image_bytes, "faces", f"user_{current_user.id}", ext)
         current_user.face_image = stored_rel_path
         current_user.face_image_hash = incoming_hash
         db.add(current_user)
@@ -140,13 +126,13 @@ def upload_task_proof(
 
     if payload.before_image:
         before_bytes, before_ext = _decode_base64_image(payload.before_image)
-        before_rel = _save_image(before_bytes, "task_proofs", f"task_{task.id}_before", before_ext)
+        before_rel = save_image(before_bytes, "task_proofs", f"task_{task.id}_before", before_ext)
         task.before_image = before_rel
         task.before_image_path = before_rel
 
     if payload.after_image:
         after_bytes, after_ext = _decode_base64_image(payload.after_image)
-        after_rel = _save_image(after_bytes, "task_proofs", f"task_{task.id}_after", after_ext)
+        after_rel = save_image(after_bytes, "task_proofs", f"task_{task.id}_after", after_ext)
         task.after_image = after_rel
         task.after_image_path = after_rel
 
