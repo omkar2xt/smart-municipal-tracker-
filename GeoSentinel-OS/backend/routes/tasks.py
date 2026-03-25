@@ -1,7 +1,7 @@
 """Task management routes - Assign, track, and complete tasks"""
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from database.session import get_db
@@ -10,6 +10,7 @@ from models.user_model import User
 from schemas.schemas import TaskCreate, TaskUpdate, TaskResponse, TaskListResponse
 from services.audit_service import write_audit_log
 from services.auth_service import require_role
+from services.maintenance_service import log_activity
 from models.enums import Role, TaskStatus
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -120,6 +121,7 @@ def get_tasks(
 def complete_task(
     task_id: int,
     payload: TaskUpdate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_role(Role.FIELD_WORKER, Role.WORKER)),
     db: Session = Depends(get_db)
 ) -> TaskResponse:
@@ -142,6 +144,12 @@ def complete_task(
                    resource_type="task", resource_id=task.id)
     db.commit()
     db.refresh(task)
+    background_tasks.add_task(
+        log_activity,
+        action="task.complete",
+        user_id=current_user.id,
+        details=f"task_id={task.id}",
+    )
     
     return TaskResponse(
         id=task.id, title=task.title, description=task.description, fund_allocated=float(task.fund_allocated), status=task.status,
@@ -150,4 +158,22 @@ def complete_task(
         expected_latitude=task.expected_latitude, expected_longitude=task.expected_longitude,
         geofence_id=task.geofence_id, due_date=task.due_date,
         completed_at=task.completed_at, created_at=task.created_at
+    )
+
+
+@router.post("/complete", response_model=TaskResponse, summary="Complete task (compat)")
+def complete_task_compat(
+    task_id: int,
+    payload: TaskUpdate,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_role(Role.FIELD_WORKER, Role.WORKER)),
+    db: Session = Depends(get_db),
+) -> TaskResponse:
+    """Compatibility endpoint that maps to /tasks/{task_id}/complete."""
+    return complete_task(
+        task_id=task_id,
+        payload=payload,
+        background_tasks=background_tasks,
+        current_user=current_user,
+        db=db,
     )

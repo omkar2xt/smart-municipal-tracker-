@@ -43,7 +43,12 @@ def seed_default_users():
             "SEED_TALUKA_ADMIN_PASSWORD": "change-me-taluka-admin",
             "SEED_WORKER_PASSWORD": "change-me-worker",
         }
-        seed_values = {key: os.getenv(key) for key in seed_defaults}
+        seed_values = {}
+        for key in seed_defaults:
+            raw_value = os.getenv(key)
+            normalized = raw_value.strip() if raw_value is not None else None
+            seed_values[key] = normalized if normalized else None
+
         missing_seed_vars = [key for key, value in seed_values.items() if value is None]
 
         env_name = (os.getenv("ENV") or os.getenv("APP_ENV") or "").strip().lower()
@@ -127,6 +132,8 @@ def seed_default_users():
     except Exception as e:
         db.rollback()
         print(f"✗ Error seeding database: {e}")
+        if isinstance(e, RuntimeError):
+            raise
     finally:
         db.close()
 

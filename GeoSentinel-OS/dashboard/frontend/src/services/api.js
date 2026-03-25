@@ -5,6 +5,15 @@ const api = axios.create({
   timeout: 10000,
 });
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("geosentinel_token");
+  if (token && !config.headers?.Authorization) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export function setAuthToken(token) {
   if (token) {
     api.defaults.headers.common.Authorization = `Bearer ${token}`;
@@ -13,13 +22,13 @@ export function setAuthToken(token) {
   }
 }
 
-export async function loginRequest(email, password) {
-  const response = await api.post("/auth/login", { email, password });
+export async function loginRequest(username, password) {
+  const response = await api.post("/auth/login", { username, password });
   return response.data;
 }
 
 export async function fetchCurrentUser() {
-  const response = await api.get("/users/me");
+  const response = await api.get("/auth/me");
   return response.data;
 }
 
@@ -73,13 +82,18 @@ export async function fetchLocations() {
       try {
         const fallback = await api.get("/tracking/locations");
         const data = fallback.data;
-        return Array.isArray(data) ? data : (Array.isArray(data?.records) ? data.records : []);
+        return Array.isArray(data?.records) ? data.records : (Array.isArray(data) ? data : []);
       } catch {
         return [];
       }
     }
     throw new Error(error?.response?.data?.detail || "Unable to fetch locations");
   }
+}
+
+export async function postTrackingLocation(payload) {
+  const response = await api.post("/tracking/location", payload);
+  return response.data;
 }
 
 export async function downloadReport(endpoint, filename) {

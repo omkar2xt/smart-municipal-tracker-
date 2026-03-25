@@ -6,7 +6,7 @@ import csv
 import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from models.enums import Role, TaskStatus
 from models.task_model import Task
 from models.user_model import User
 from services.auth_service import require_role
+from services.maintenance_service import register_generated_report
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -74,6 +75,36 @@ def _csv_response(filename: str, rows: list[dict], headers: list[str]) -> Respon
     )
 
 
+def _scoped_user_ids(current_user: User, db: Session):
+    if current_user.role in (Role.ADMIN, Role.SUB_ADMIN):
+        return None
+
+    scoped_users = db.query(User.id)
+    if current_user.role == Role.STATE_ADMIN:
+        if not current_user.state:
+            raise ValueError("Missing state for state admin")
+        return scoped_users.filter(User.state == current_user.state)
+
+    if current_user.role == Role.DISTRICT_ADMIN:
+        if not current_user.state or not current_user.district:
+            raise ValueError("Missing state or district for district admin")
+        return scoped_users.filter(
+            User.state == current_user.state,
+            User.district == current_user.district,
+        )
+
+    if current_user.role == Role.TALUKA_ADMIN:
+        if not current_user.state or not current_user.district or not current_user.taluka:
+            raise ValueError("Missing state, district, or taluka for taluka admin")
+        return scoped_users.filter(
+            User.state == current_user.state,
+            User.district == current_user.district,
+            User.taluka == current_user.taluka,
+        )
+
+    return scoped_users.filter(User.id == current_user.id)
+
+
 @router.get("/attendance.csv", summary="Download attendance report as CSV")
 def attendance_report_csv(
     current_user: User = Depends(require_role(Role.ADMIN, Role.SUB_ADMIN, Role.TALUKA_ADMIN, Role.STATE_ADMIN, Role.DISTRICT_ADMIN)),
@@ -81,23 +112,12 @@ def attendance_report_csv(
 ) -> Response:
     query = db.query(Attendance)
 
-    if current_user.role in (Role.ADMIN, Role.SUB_ADMIN):
-        pass
-    else:
-        scoped_users = db.query(User.id)
-        if current_user.role == Role.STATE_ADMIN:
-            scoped_users = scoped_users.filter(User.state == current_user.state)
-        elif current_user.role == Role.DISTRICT_ADMIN:
-            scoped_users = scoped_users.filter(
-                User.state == current_user.state,
-                User.district == current_user.district,
-            )
-        elif current_user.role == Role.TALUKA_ADMIN:
-            scoped_users = scoped_users.filter(
-                User.state == current_user.state,
-                User.district == current_user.district,
-                User.taluka == current_user.taluka,
-            )
+    try:
+        scoped_users = _scoped_user_ids(current_user, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    if scoped_users is not None:
         query = query.filter(Attendance.user_id.in_(scoped_users))
 
     records = query.order_by(Attendance.timestamp.desc()).limit(5000).all()
@@ -122,23 +142,12 @@ def task_report_csv(
 ) -> Response:
     query = db.query(Task)
 
-    if current_user.role in (Role.ADMIN, Role.SUB_ADMIN):
-        pass
-    else:
-        scoped_users = db.query(User.id)
-        if current_user.role == Role.STATE_ADMIN:
-            scoped_users = scoped_users.filter(User.state == current_user.state)
-        elif current_user.role == Role.DISTRICT_ADMIN:
-            scoped_users = scoped_users.filter(
-                User.state == current_user.state,
-                User.district == current_user.district,
-            )
-        elif current_user.role == Role.TALUKA_ADMIN:
-            scoped_users = scoped_users.filter(
-                User.state == current_user.state,
-                User.district == current_user.district,
-                User.taluka == current_user.taluka,
-            )
+    try:
+        scoped_users = _scoped_user_ids(current_user, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    if scoped_users is not None:
         query = query.filter(Task.assigned_to.in_(scoped_users))
 
     records = query.order_by(Task.created_at.desc()).limit(5000).all()
@@ -163,12 +172,27 @@ def task_report_csv(
 
 @router.get("/performance.pdf", summary="Download performance report as PDF")
 def performance_report_pdf(
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_role(Role.ADMIN, Role.SUB_ADMIN, Role.TALUKA_ADMIN, Role.STATE_ADMIN, Role.DISTRICT_ADMIN)),
     db: Session = Depends(get_db),
 ) -> Response:
-    total_users = db.query(User).count()
-    total_tasks = db.query(Task).count()
-    completed_tasks = db.query(Task).filter(Task.status == TaskStatus.COMPLETED).count()
+    users_query = db.query(User)
+    tasks_query = db.query(Task)
+    completed_query = db.query(Task).filter(Task.status == TaskStatus.COMPLETED)
+
+    try:
+        scoped_users = _scoped_user_ids(current_user, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    if scoped_users is not None:
+        users_query = users_query.filter(User.id.in_(scoped_users))
+        tasks_query = tasks_query.filter(Task.assigned_to.in_(scoped_users))
+        completed_query = completed_query.filter(Task.assigned_to.in_(scoped_users))
+
+    total_users = users_query.count()
+    total_tasks = tasks_query.count()
+    completed_tasks = completed_query.count()
     completion_rate = 0 if total_tasks == 0 else round((completed_tasks / total_tasks) * 100, 2)
 
     lines = [
@@ -182,6 +206,12 @@ def performance_report_pdf(
     ]
 
     pdf = _simple_pdf_bytes(lines)
+    background_tasks.add_task(
+        register_generated_report,
+        report_type="performance_pdf",
+        generated_by=current_user.id,
+        scope=current_user.role.value,
+    )
     return Response(
         content=pdf,
         media_type="application/pdf",

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
     max_file_size_mb: int = 50
     allowed_extensions: list[str] = Field(default_factory=lambda: ["jpg", "jpeg", "png", "gif"])
+    cloudinary_url: str | None = Field(default=None, validation_alias="CLOUDINARY_URL")
     
     # CORS
     cors_origins: list[str] = Field(

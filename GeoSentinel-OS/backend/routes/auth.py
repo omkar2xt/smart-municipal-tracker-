@@ -1,123 +1,108 @@
 """Authentication routes for GeoSentinel OS."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.session import get_db
 from models.user_model import User
-from schemas.schemas import UserLogin, TokenResponse, UserResponse
-from services.auth_service import create_access_token, verify_password
+from schemas.user_schema import CurrentUserResponse, LoginRequest, LoginResponse
 from services.audit_service import write_audit_log
+from utils.security import create_access_token, get_current_user, hash_identifier, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=TokenResponse, summary="User login")
+@router.post("/login", response_model=LoginResponse, summary="User login")
 def login(
-    credentials: UserLogin,
+    credentials: LoginRequest,
     db: Session = Depends(get_db)
-) -> TokenResponse:
+) -> LoginResponse:
     """
-    Login endpoint for all user types
-    
-    Returns JWT token for authenticated users
+    Authenticate user and return JWT token.
+
+    Token payload includes:
+    - user_id
+    - role
     """
-    # Find user by email
-    stmt = select(User).where(User.email == credentials.email)
+    # Using email as username for this project.
+    username_hash = hash_identifier(credentials.username)
+    stmt = select(User).where(User.email == credentials.username)
     user = db.scalar(stmt)
-    
+
     if not user:
-        # Log failed attempt
         write_audit_log(
             db,
             action="auth.login",
             status="failure",
-            details="User not found"
+            details=(
+                f"timestamp={datetime.now(timezone.utc).isoformat()} "
+                f"username_hash={username_hash} reason=invalid_credentials"
+            ),
         )
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Verify password
-    if not verify_password(credentials.password, user.password_hash):
+
+    if not verify_password(credentials.password, user.password_hash, user=user, db=db):
         write_audit_log(
             db,
             action="auth.login",
             status="failure",
             user_id=user.id,
-            details="Invalid password"
+            details=(
+                f"timestamp={datetime.now(timezone.utc).isoformat()} "
+                f"username_hash={username_hash} reason=invalid_credentials"
+            ),
         )
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Check if user is active
+
     if not user.is_active:
         write_audit_log(
             db,
             action="auth.login",
             status="failure",
             user_id=user.id,
-            details="User is inactive"
+            details=(
+                f"timestamp={datetime.now(timezone.utc).isoformat()} "
+                f"username_hash={username_hash} reason=inactive_account"
+            ),
         )
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
-    
-    # Create JWT token
+
     token = create_access_token({
-        "sub": str(user.id),
-        "email": user.email,
+        "user_id": user.id,
         "role": user.role.value
     })
-    
-    # Log successful login
-    write_audit_log(
-        db,
-        action="auth.login",
-        status="success",
-        user_id=user.id,
-        details=f"Role: {user.role.value}"
-    )
-    db.commit()
-    
-    user_response = UserResponse(
-        id=user.id,
-        name=user.name,
-        email=user.email,
-        role=user.role,
-        state=user.state,
-        district=user.district,
-        taluka=user.taluka,
-        is_active=user.is_active,
-        created_at=user.created_at
-    )
-    
-    return TokenResponse(
+
+    return LoginResponse(
         access_token=token,
         token_type="bearer",
-        user=user_response
+        role=user.role.value,
     )
 
 
-@router.post("/refresh", response_model=TokenResponse, summary="Refresh token")
-def refresh_token(
-    token: str,
-    db: Session = Depends(get_db)
-) -> TokenResponse:
+@router.get("/me", response_model=CurrentUserResponse, summary="Get current user")
+def me(current_user: User = Depends(get_current_user)) -> CurrentUserResponse:
     """
-    Refresh an existing token
+    Protected endpoint that returns authenticated user info.
     """
-    # For now, just create a new token based on extracting user info
-    # In production, verify the old token first
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Token refresh not yet implemented"
+    return CurrentUserResponse(
+        user_id=current_user.id,
+        role=current_user.role.value,
+        email=current_user.email,
     )

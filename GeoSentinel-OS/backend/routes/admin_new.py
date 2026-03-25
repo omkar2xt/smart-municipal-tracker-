@@ -10,9 +10,10 @@ from database.session import get_db
 from models.user_model import User
 from models.attendance_model import Attendance
 from models.location_log_model import LocationLog
+from models.task_model import Task
 from schemas.schemas import UserResponse
 from services.auth_service import require_role
-from models.enums import Role
+from models.enums import Role, TaskStatus
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -47,7 +48,23 @@ def get_attendance_report(
     db: Session = Depends(get_db)
 ):
     """Get attendance records for reporting"""
-    query = db.query(Attendance)
+    query = db.query(Attendance).join(User, User.id == Attendance.user_id)
+
+    if current_user.role in (Role.ADMIN, Role.SUB_ADMIN):
+        pass
+    elif current_user.role == Role.STATE_ADMIN:
+        query = query.filter(User.state == current_user.state)
+    elif current_user.role == Role.DISTRICT_ADMIN:
+        query = query.filter(
+            User.state == current_user.state,
+            User.district == current_user.district,
+        )
+    elif current_user.role == Role.TALUKA_ADMIN:
+        query = query.filter(
+            User.state == current_user.state,
+            User.district == current_user.district,
+            User.taluka == current_user.taluka,
+        )
     
     if district:
         # Filter by district
@@ -117,11 +134,28 @@ def get_system_stats(
     current_user: User = Depends(require_role(Role.ADMIN, Role.STATE_ADMIN)),
     db: Session = Depends(get_db)
 ):
-    """Get system-wide statistics"""
+    """Get analytics metrics for decision-making."""
     total_users = db.query(User).count()
+    total_workers = db.query(User).filter(User.role.in_([Role.WORKER, Role.FIELD_WORKER])).count()
     total_attendance = db.query(Attendance).count()
     total_locations = db.query(LocationLog).count()
     spoof_detections = db.query(LocationLog).filter(LocationLog.spoof_detection_flag == True).count()
+    total_tasks = db.query(Task).count()
+    completed_tasks = db.query(Task).filter(Task.status == TaskStatus.COMPLETED).count()
+
+    attendance_rate = 0.0
+    if total_workers > 0:
+        workers_with_attendance = db.query(Attendance.user_id).distinct().count()
+        attendance_rate = round((workers_with_attendance / total_workers) * 100, 2)
+
+    task_completion_rate = 0.0
+    if total_tasks > 0:
+        task_completion_rate = round((completed_tasks / total_tasks) * 100, 2)
+
+    worker_efficiency = 0.0
+    if total_workers > 0:
+        worker_efficiency = round(completed_tasks / total_workers, 2)
+
     taluka_count = db.query(User).filter(User.role == Role.TALUKA_ADMIN).count()
     worker_count = db.query(User).filter(User.role == Role.WORKER).count()
     
@@ -130,6 +164,11 @@ def get_system_stats(
         "total_attendance_records": total_attendance,
         "total_location_logs": total_locations,
         "spoof_detections": spoof_detections,
+        "attendance_rate": attendance_rate,
+        "task_completion_rate": task_completion_rate,
+        "worker_efficiency": worker_efficiency,
+        "completed_tasks": completed_tasks,
+        "total_tasks": total_tasks,
         "by_role": {
             "admin": db.query(User).filter(User.role == Role.ADMIN).count(),
             "sub_admin": db.query(User).filter(User.role == Role.SUB_ADMIN).count(),

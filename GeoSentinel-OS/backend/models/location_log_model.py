@@ -23,6 +23,7 @@ class LocationLog(Base):
     accelerometer_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     accelerometer_z: Mapped[float | None] = mapped_column(Float, nullable=True)
     accelerometer_magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    direction: Mapped[float | None] = mapped_column(Float, nullable=True)
     spoof_detection_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     spoof_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     is_synced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)

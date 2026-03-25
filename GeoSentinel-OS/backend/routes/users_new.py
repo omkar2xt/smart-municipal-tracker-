@@ -18,6 +18,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("/me", response_model=UserResponse, summary="Get current user")
 def get_current_user_info(
     current_user: User = Depends(require_role(
+        Role.ADMIN, Role.SUB_ADMIN,
         Role.STATE_ADMIN, Role.DISTRICT_ADMIN, Role.TALUKA_ADMIN,
         Role.FIELD_WORKER, Role.WORKER,
     )),

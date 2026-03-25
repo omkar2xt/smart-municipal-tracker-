@@ -1,5 +1,7 @@
 """Simple mock API server for GeoSentinel OS demo."""
 
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -77,7 +79,7 @@ async def get_tasks():
     }
 
 @app.post("/api/attendance/mark")
-async def mark_attendance(data: dict = None):
+async def mark_attendance(data: dict[str, Any] | None = None):
     return {
         "status": "success",
         "message": "Attendance marked successfully",

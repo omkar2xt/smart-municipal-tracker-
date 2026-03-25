@@ -144,6 +144,7 @@ class LocationLogCreate(BaseModel):
     accelerometer_y: Optional[float] = None
     accelerometer_z: Optional[float] = None
     accelerometer_magnitude: Optional[float] = None
+    direction: Optional[float] = Field(default=None, ge=0, le=360)
     spoof_detection_flag: Optional[bool] = False
     spoof_reason: Optional[str] = None
 
@@ -160,6 +161,7 @@ class LocationLogResponse(BaseModel):
     accelerometer_y: Optional[float]
     accelerometer_z: Optional[float]
     accelerometer_magnitude: Optional[float]
+    direction: Optional[float]
     spoof_detection_flag: bool
     spoof_reason: Optional[str]
     is_synced: bool

@@ -11,6 +11,14 @@ function toTier(role) {
   return "Execution Level (Tier 4)";
 }
 
+function nameFromEmail(email) {
+  if (!email) return "User";
+  const atIndex = String(email).indexOf("@");
+  const localPart = atIndex >= 0 ? String(email).slice(0, atIndex) : String(email);
+  const normalized = localPart.trim();
+  return normalized || "User";
+}
+
 export function AuthProvider({ children }) {
   const [loading, setLoading] = React.useState(true);
   const [session, setSession] = React.useState(() => {
@@ -45,8 +53,8 @@ export function AuthProvider({ children }) {
         if (!isMounted) return;
         setSession((prev) => ({
           ...(prev || {}),
-          id: user.id,
-          name: user.name,
+          id: user.user_id,
+          name: nameFromEmail(user.email),
           email: user.email,
           role: user.role,
           tier: toTier(user.role),
@@ -72,20 +80,27 @@ export function AuthProvider({ children }) {
   const login = React.useCallback(async (email, password) => {
     const data = await loginRequest(email, password);
     const token = data?.access_token;
-    const user = data?.user;
+    const role = data?.role;
 
-    if (!token || !user) {
+    if (!token || !role) {
       throw new Error("Invalid login response from server.");
     }
 
     setAuthToken(token);
 
+    let currentUser = null;
+    try {
+      currentUser = await fetchCurrentUser();
+    } catch {
+      currentUser = null;
+    }
+
     const nextSession = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      tier: toTier(user.role),
+      id: currentUser?.user_id ?? null,
+      email: currentUser?.email || email,
+      name: nameFromEmail(currentUser?.email || email),
+      role,
+      tier: toTier(role),
       loggedAt: new Date().toISOString(),
     };
     setSession(nextSession);

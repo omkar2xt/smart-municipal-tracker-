@@ -195,6 +195,10 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_location_user ON location_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_location_user_time ON location_logs(user_id, timestamp DESC);
+
+-- Backward-compatible migration: persist orientation direction for tracking logs.
+ALTER TABLE location_logs
+    ADD COLUMN IF NOT EXISTS direction DOUBLE PRECISION;
 CREATE INDEX IF NOT EXISTS idx_reports_generated_by ON reports(generated_by);
 CREATE INDEX IF NOT EXISTS idx_fund_usage_task ON fund_usage(task_id);
 CREATE INDEX IF NOT EXISTS idx_audit_user_time ON audit_logs(user_id, timestamp DESC);

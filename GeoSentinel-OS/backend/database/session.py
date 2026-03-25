@@ -14,6 +14,11 @@ settings = get_settings()
 # Database URL from environment or default
 DATABASE_URL = os.getenv("DATABASE_URL", settings.database_url)
 
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+if DATABASE_URL.startswith("postgresql+psycopg2://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
+
 # Connection arguments
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
