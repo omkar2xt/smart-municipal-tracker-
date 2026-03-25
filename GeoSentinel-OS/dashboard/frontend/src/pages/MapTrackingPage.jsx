@@ -70,6 +70,20 @@ function distanceMeters(a, b) {
   return r * arc;
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function blendPosition(previous, next, alpha) {
+  return [
+    previous[0] + (next[0] - previous[0]) * alpha,
+    previous[1] + (next[1] - previous[1]) * alpha,
+  ];
+}
+
+const MAX_ACCEPTABLE_ACCURACY_M = 80;
+const MAX_IGNORE_ACCURACY_M = 150;
+
 export default function MapTrackingPage() {
   const [position, setPosition] = useState([19.0, 73.0]);
   const [targetPosition, setTargetPosition] = useState([19.0, 73.0]);
@@ -90,6 +104,7 @@ export default function MapTrackingPage() {
   const directionRef = useRef(0);
   const movingRef = useRef(false);
   const accelRef = useRef({ x: 0, y: 0, z: 0, magnitude: 0 });
+  const gravityRef = useRef({ x: 0, y: 0, z: 9.81 });
 
   useEffect(() => {
     if (typeof window !== "undefined" && !window.isSecureContext) {
@@ -137,15 +152,21 @@ export default function MapTrackingPage() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, speed } = pos.coords;
+        const gpsAccuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
         const now = Date.now();
         const nextPosition = [latitude, longitude];
+
+        if (gpsAccuracy != null && gpsAccuracy > MAX_IGNORE_ACCURACY_M) {
+          setTrackingError(`Weak GPS signal (${Math.round(gpsAccuracy)} m). Move to open sky for better precision.`);
+          return;
+        }
 
         if (firstGpsRef.current || !lastPositionRef.current) {
           firstGpsRef.current = false;
           lastPositionRef.current = nextPosition;
           lastTimestampRef.current = now;
           setTargetPosition(nextPosition);
-          setAccuracy(pos.coords.accuracy ?? null);
+          setAccuracy(gpsAccuracy);
           setSpeed(Number.isFinite(speed) && speed >= 0 ? speed : 0);
           setTrackingError("");
           return;
@@ -156,25 +177,37 @@ export default function MapTrackingPage() {
         const elapsedSeconds = Math.max((now - lastTimestampRef.current) / 1000, 1);
         const computedSpeed = distance / elapsedSeconds;
         const effectiveSpeed = Number.isFinite(speed) && speed >= 0 ? speed : computedSpeed;
-        const movementDetected = accelRef.current.magnitude >= 0.12;
+        const movementDetected = accelRef.current.magnitude >= 0.06;
+
+        const jitterThreshold = clamp((gpsAccuracy ?? 20) * 0.35, 2.5, 14);
+        if (distance < jitterThreshold && !movementDetected) {
+          setAccuracy(gpsAccuracy);
+          setSpeed(0);
+          setTrackingError("");
+          return;
+        }
+
+        const quality = gpsAccuracy == null ? 0.6 : clamp(1 - gpsAccuracy / MAX_ACCEPTABLE_ACCURACY_M, 0.15, 0.9);
+        const smoothingAlpha = movementDetected ? clamp(0.3 + quality * 0.55, 0.3, 0.88) : clamp(0.2 + quality * 0.35, 0.2, 0.55);
+        const filteredPosition = blendPosition(prevPosition, nextPosition, smoothingAlpha);
 
         const spoofDetectionFlag = distance > 8 && !movementDetected;
         const spoofReason = spoofDetectionFlag ? "GPS changed while accelerometer shows no movement" : "";
 
-        setTargetPosition(nextPosition);
-        setAccuracy(pos.coords.accuracy ?? null);
+        setTargetPosition(filteredPosition);
+        setAccuracy(gpsAccuracy);
         setSpeed(effectiveSpeed);
         setTrackingError("");
 
-        lastPositionRef.current = nextPosition;
+        lastPositionRef.current = filteredPosition;
         lastTimestampRef.current = now;
 
         if (now - lastUploadRef.current >= 7000) {
           lastUploadRef.current = now;
           API.post("/tracking/location", {
-            latitude,
-            longitude,
-            accuracy: pos.coords.accuracy ?? null,
+            latitude: filteredPosition[0],
+            longitude: filteredPosition[1],
+            accuracy: gpsAccuracy,
             speed: effectiveSpeed,
             accelerometer_x: accelRef.current.x,
             accelerometer_y: accelRef.current.y,
@@ -208,13 +241,25 @@ export default function MapTrackingPage() {
     if (!sensorEnabled) return undefined;
 
     const onMotion = (event) => {
-      const acc = event.acceleration || event.accelerationIncludingGravity;
-      const x = Number(acc?.x || 0);
-      const y = Number(acc?.y || 0);
-      const z = Number(acc?.z || 0);
-      const magnitude = Math.sqrt(x * x + y * y + z * z);
-      setAccelData({ x, y, z, magnitude });
-      setMoving(magnitude >= 0.12);
+      const raw = event.accelerationIncludingGravity || event.acceleration;
+      const rawX = Number(raw?.x || 0);
+      const rawY = Number(raw?.y || 0);
+      const rawZ = Number(raw?.z || 0);
+
+      const gravityAlpha = 0.82;
+      const g = gravityRef.current;
+      const gx = gravityAlpha * g.x + (1 - gravityAlpha) * rawX;
+      const gy = gravityAlpha * g.y + (1 - gravityAlpha) * rawY;
+      const gz = gravityAlpha * g.z + (1 - gravityAlpha) * rawZ;
+      gravityRef.current = { x: gx, y: gy, z: gz };
+
+      const linearX = rawX - gx;
+      const linearY = rawY - gy;
+      const linearZ = rawZ - gz;
+      const linearMagnitude = Math.sqrt(linearX * linearX + linearY * linearY + linearZ * linearZ);
+
+      setAccelData({ x: linearX, y: linearY, z: linearZ, magnitude: linearMagnitude });
+      setMoving(linearMagnitude >= 0.06);
     };
 
     const onOrientation = (event) => {
