@@ -1,88 +1,94 @@
 # GeoSentinel OS
 
-Clean, modular, role-based full-stack architecture for smart municipal operations and governance deployment.
+GeoSentinel OS is a role-based municipal operations platform for workforce attendance, task execution tracking, spoof-aware location monitoring, and governance reporting from worker level to state level.
 
-## Project Structure
+## Live URLs
+
+- Frontend: https://frontend-mu-green-25.vercel.app
+- Frontend backup: https://frontend-ogqr9c9lc-omkar2xts-projects.vercel.app
+- Backend API: https://backend-delta-seven-36.vercel.app
+
+## What It Solves
+
+- Workforce accountability with GPS-backed attendance and task traceability.
+- Proof-based execution with before/after image uploads.
+- Multi-level governance with role-scoped dashboards and decisions.
+- Auditability through structured logs and tracked operational actions.
+
+## Core Features
+
+- Authentication with role-based access control.
+- Worker face verification and task proof upload flows.
+- Taluka, Sub-Admin, and State Admin analytics panels.
+- Spoof detection signals and location monitoring.
+- CSV/PDF reporting for operational and compliance workflows.
+- API fallback logic and resilient frontend request handling.
+
+## Architecture
 
 ```text
 GeoSentinel-OS/
-│
-├── mobile_app/
-│   ├── screens/
-│   │   ├── WorkerDashboard.js
-│   │   ├── TaskScreen.js
-│   │   └── AttendanceScreen.js
-│   ├── services/
-│   │   ├── gpsService.js
-│   │   ├── sensorService.js
-│   │   ├── authService.js
-│   │   └── apiService.js
-│   └── App.js
-│
-├── backend/
-│   ├── main.py
-│   ├── routes/
-│   │   ├── auth.py
-│   │   ├── attendance.py
-│   │   ├── tasks.py
-│   │   ├── tracking.py
-│   │   └── admin.py
-│   │
-│   ├── services/
-│   │   ├── gps_validation.py
-│   │   ├── spoof_detection.py
-│   │   ├── face_verification.py
-│   │   └── image_analysis.py
-│   │
-│   ├── roles/
-│   │   ├── state_admin.py
-│   │   ├── district_admin.py
-│   │   ├── taluka_admin.py
-│   │   └── worker.py
-│   │
-│   ├── models/
-│   │   ├── user_model.py
-│   │   ├── task_model.py
-│   │   └── attendance_model.py
-│   │
-│   ├── database/
-│   └── config/
-│
-├── ai_module/
-│   ├── face_model/
-│   ├── spoof_detection/
-│   └── image_verification/
-│
-├── dashboard/
-│   ├── state_admin/
-│   ├── district_admin/
-│   ├── taluka_admin/
-│   └── shared_components/
-│
-├── docs/
-│   ├── architecture.md
-│   └── api_docs.md
-│
-└── README.md
+├── backend/           # FastAPI API, SQLAlchemy models, role routes, services
+├── dashboard/         # React + Vite web dashboard
+├── mobile_app/        # React Native worker app
+├── ai_module/         # Detection/verification modules
+├── docs/              # Architecture and API documentation
+└── uploads/           # Media and proof artifacts
 ```
 
-## Role-Based Governance Model
+## Role Model
 
-- State Admin: statewide control, policy decisions, district-level oversight.
-- District Admin: district-level planning, task assignment to taluka level, compliance checks.
-- Taluka Admin: local operational coordination, worker task dispatch, verification review.
-- Field Worker: mobile-first execution role for attendance, task completion, and evidence submission.
+- State Admin: statewide command, policy decisions, oversight analytics.
+- District Admin: district planning, allocations, and governance controls.
+- Taluka Admin: local operations, worker coordination, field monitoring.
+- Worker: attendance, execution, verification, and on-ground proof submission.
 
-## Access and Data Flow
+## Data Flow
 
-- RBAC control: each admin level has scoped access and cannot exceed assigned jurisdiction.
-- Upward flow: field data and reports move from worker to taluka, district, and then state level.
-- Downward flow: commands, tasks, and directives move from state to district to taluka to workers.
-- Traceability: role-aware models and routes support accountable governance workflows.
+- Downward directives: State -> District -> Taluka -> Worker.
+- Upward evidence and reporting: Worker -> Taluka -> District -> State.
+- Scope isolation: each role sees and acts only within assigned jurisdiction.
 
-## Why This Scales
+## Quick Start
 
-- Role boundaries are explicit in `backend/roles` and dashboard role modules.
-- Backend is split into routes, services, and models for maintainability.
-- AI modules stay isolated and replaceable without disrupting API contracts.
-- Mobile and dashboard evolve independently while sharing a central API.
+1. Backend
+
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+2. Frontend
+
+```bash
+cd dashboard/frontend
+npm install
+npm run dev
+```
+
+3. Environment Setup
+
+- Backend template: backend/.env.example
+- Frontend dev env: dashboard/frontend/.env.development
+- Frontend prod template: dashboard/frontend/.env.production.example
+
+## Tech Stack
+
+- Backend: FastAPI, SQLAlchemy, Pydantic, Uvicorn
+- Frontend: React, Vite, Axios, Leaflet
+- Mobile: React Native
+- Database: PostgreSQL (production-ready), SQLite for local/simple setups
+- Deployment: Vercel (frontend and backend deployments currently configured)
+
+## Documentation
+
+- Complete guide: COMPLETE_SYSTEM_GUIDE.md
+- Backend docs index: backend/DOCUMENTATION_INDEX.md
+- API documentation: docs/api_docs.md
+
+## License
+
+Licensed under the terms in the LICENSE file.
