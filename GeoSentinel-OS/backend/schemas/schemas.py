@@ -2,7 +2,7 @@
 Pydantic schemas for request/response validation
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from datetime import datetime
 from typing import Optional, List
 from models.enums import Role, TaskStatus
@@ -91,6 +91,7 @@ class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     assigned_to: int
+    fund_allocated: Optional[float] = Field(default=0, ge=0)
     expected_latitude: Optional[float] = None
     expected_longitude: Optional[float] = None
     geofence_id: Optional[str] = None
@@ -109,9 +110,12 @@ class TaskResponse(BaseModel):
     id: int
     title: str
     description: Optional[str]
+    fund_allocated: float
     status: TaskStatus
     assigned_to: int
     assigned_by: int
+    before_image: Optional[str]
+    after_image: Optional[str]
     before_image_path: Optional[str]
     after_image_path: Optional[str]
     expected_latitude: Optional[float]
@@ -131,6 +135,101 @@ class TaskListResponse(BaseModel):
     records: List[TaskResponse]
 
 
+class FaceVerificationRequest(BaseModel):
+    user_id: int
+    image: str = Field(..., min_length=10)
+
+
+class FaceVerificationResponse(BaseModel):
+    verified: bool
+    message: str
+    face_image: Optional[str] = None
+
+
+class TaskProofUploadRequest(BaseModel):
+    task_id: int
+    before_image: Optional[str] = None
+    after_image: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_at_least_one_image(self):
+        if not self.before_image and not self.after_image:
+            raise ValueError("Provide before_image or after_image")
+        return self
+
+
+class TaskProofUploadResponse(BaseModel):
+    task_id: int
+    before_image: Optional[str] = None
+    after_image: Optional[str] = None
+    status: TaskStatus
+
+
+class SubAdminPlanDecisionRequest(BaseModel):
+    decision: str = Field(..., pattern="^(approve|reject|modify)$")
+    reason: Optional[str] = None
+    updated_title: Optional[str] = None
+    updated_description: Optional[str] = None
+    updated_due_date: Optional[datetime] = None
+
+
+class SubAdminBudgetAdjustRequest(BaseModel):
+    new_fund_allocated: float = Field(..., ge=0)
+    adjustment_amount: float
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class SubAdminReassignTaskRequest(BaseModel):
+    new_worker_id: int
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class SubAdminTalukaFlagRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500)
+    severity: str = Field(..., pattern="^(low|medium|high)$")
+
+
+class AdminCreateUserRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=100)
+    role: Role
+    state: Optional[str] = None
+    district: Optional[str] = None
+    taluka: Optional[str] = None
+    is_active: bool = True
+
+
+class AdminUpdateUserRequest(BaseModel):
+    user_id: int
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    role: Optional[Role] = None
+    state: Optional[str] = None
+    district: Optional[str] = None
+    taluka: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = Field(default=None, min_length=8, max_length=100)
+
+
+class AdminFundAllocateRequest(BaseModel):
+    district: str = Field(..., min_length=1, max_length=120)
+    amount: float = Field(..., gt=0)
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class AdminTransferWorkerRequest(BaseModel):
+    worker_id: int
+    new_district: str = Field(..., min_length=1, max_length=120)
+    new_taluka: Optional[str] = Field(default=None, max_length=120)
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class AdminFlagDistrictRequest(BaseModel):
+    district: str = Field(..., min_length=1, max_length=120)
+    reason: str = Field(..., min_length=1, max_length=500)
+    severity: str = Field(..., pattern="^(low|medium|high)$")
+
+
 # ============ LOCATION LOG SCHEMAS ============
 
 class LocationLogCreate(BaseModel):
@@ -142,6 +241,7 @@ class LocationLogCreate(BaseModel):
     accelerometer_y: Optional[float] = None
     accelerometer_z: Optional[float] = None
     accelerometer_magnitude: Optional[float] = None
+    direction: Optional[float] = Field(default=None, ge=0, le=360)
     spoof_detection_flag: Optional[bool] = False
     spoof_reason: Optional[str] = None
 
@@ -158,6 +258,7 @@ class LocationLogResponse(BaseModel):
     accelerometer_y: Optional[float]
     accelerometer_z: Optional[float]
     accelerometer_magnitude: Optional[float]
+    direction: Optional[float]
     spoof_detection_flag: bool
     spoof_reason: Optional[str]
     is_synced: bool

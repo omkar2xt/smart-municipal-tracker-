@@ -19,6 +19,8 @@ class User(Base):
     state: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     district: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     taluka: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    face_image: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    face_image_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

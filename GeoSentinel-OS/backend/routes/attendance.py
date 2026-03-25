@@ -1,5 +1,6 @@
 """Attendance tracking routes."""
 
+import logging
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -15,6 +16,8 @@ from services.audit_service import write_audit_log
 from services.geofence_service import GeofenceService
 from services.spoof_service import SpoofDetectionService
 from models.enums import Role
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 geofence_service = GeofenceService()
